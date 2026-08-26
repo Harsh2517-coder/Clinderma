@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local model/data caches and weights
+.cache/
+cache/
+models/
+huggingface/
+hf_cache/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# Generated runtime outputs
+preprocessing/outputs/
+outputs/
+tmp/
+temp/
+*.tmp
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
