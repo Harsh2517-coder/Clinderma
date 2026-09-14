@@ -1,0 +1,6 @@
+path: .
+train: images
+val: images
+
+nc: 7
+names: ['open_comedone', 'closed_comedone', 'papule', 'pustule', 'nodule', 'cyst', 'macrocomedone']
