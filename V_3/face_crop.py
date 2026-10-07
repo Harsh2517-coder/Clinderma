@@ -27,9 +27,9 @@ def detect_faces(img_bgr, conf=0.3):
     return boxes
 
 
-def crop_face(img_bgr, conf=0.3, margin=MARGIN):
-    """Detect the largest face and return the cropped region with a margin.
-    Returns None if no face is found."""
+def crop_face_box(img_bgr, conf=0.3, margin=MARGIN):
+    """Detect the largest face; return (crop, (x0, y0, x1, y1)) -- the box is the crop's position in img_bgr, so boxes found in
+    the crop can be mapped back to the original image. None if no face is found."""
     h, w = img_bgr.shape[:2]
     boxes = detect_faces(img_bgr, conf=conf)
     if not boxes:
@@ -39,7 +39,14 @@ def crop_face(img_bgr, conf=0.3, margin=MARGIN):
     mx, my = bw * margin, bh * margin
     x0, y0 = max(0, int(x0 - mx)), max(0, int(y0 - my))
     x1, y1 = min(w, int(x1 + mx)), min(h, int(y1 + my))
-    return img_bgr[y0:y1, x0:x1]
+    return img_bgr[y0:y1, x0:x1], (x0, y0, x1, y1)
+
+
+def crop_face(img_bgr, conf=0.3, margin=MARGIN):
+    """Detect the largest face and return the cropped region with a margin.
+    Returns None if no face is found."""
+    found = crop_face_box(img_bgr, conf=conf, margin=margin)
+    return None if found is None else found[0]
 
 
 if __name__ == "__main__":

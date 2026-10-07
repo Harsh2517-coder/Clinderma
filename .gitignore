@@ -35,3 +35,6 @@ temp/
 Thumbs.db
 .vscode/
 .idea/
+
+# training outputs
+runs/

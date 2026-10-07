@@ -17,7 +17,8 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-from face_crop import crop_face
+from face_crop import crop_face_box
+from enhance import apply_clahe
 
 MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "face_parsing_resnet18.onnx")
 
@@ -45,17 +46,27 @@ def _parse_mask(img_bgr):
     return cv2.resize(small_mask, (w, h), interpolation=cv2.INTER_NEAREST)
 
 
-def analyze_face(img_bgr, conf=0.3, margin=0.3):
-    """Detect + parse the face once. Returns a dict with:
-      crop        -- BGR face crop (from face_crop.crop_face)
+def analyze_face(img_bgr, conf=0.3, margin=0.3, clahe=True):
+    """CLAHE the whole image first (stage 1), then detect + parse the face once on the enhanced image. Returns a dict with:
+      crop        -- BGR face crop of the CLAHE-enhanced image (what detection runs on)
+      crop_original -- the same crop of the untouched input (for display / cutouts)
+      crop_box    -- (x0, y0, x1, y1) of the crop inside the input image
+      clahe_image -- the full CLAHE-enhanced image
       class_mask  -- per-pixel CelebAMask-HQ class index, same size as crop
       face_mask   -- cleaned binary mask (uint8 0/255) of FACE_CLASSES,
                      largest connected component only
     or None if no face is found. Shared by segment_face() and spot detection
     so the parsing model only runs once per image."""
-    crop = crop_face(img_bgr, conf=conf, margin=margin)
-    if crop is None:
+    enhanced = apply_clahe(img_bgr) if clahe else img_bgr
+    found = crop_face_box(enhanced, conf=conf, margin=margin)
+    if found is None and clahe:
+        # enhancement must never cost a face: CLAHE changes what the detector sees on borderline (close-up / partial) shots,
+        # so retry on the untouched image and crop the enhanced image at that box.
+        found = crop_face_box(img_bgr, conf=conf, margin=margin)
+    if found is None:
         return None
+    box = found[1]
+    crop = enhanced[box[1]:box[3], box[0]:box[2]]
 
     class_mask = _parse_mask(crop)
     face_mask = np.isin(class_mask, list(FACE_CLASSES)).astype(np.uint8) * 255
@@ -70,7 +81,9 @@ def analyze_face(img_bgr, conf=0.3, margin=0.3):
     if not face_mask.any():
         return None
 
-    return {"crop": crop, "class_mask": class_mask, "face_mask": face_mask}
+    x0, y0, x1, y1 = box
+    return {"crop": crop, "crop_original": img_bgr[y0:y1, x0:x1], "crop_box": box, "clahe_image": enhanced,
+            "class_mask": class_mask, "face_mask": face_mask}
 
 
 def segment_face(img_bgr, conf=0.3, margin=0.3, feather=3):
@@ -80,7 +93,7 @@ def segment_face(img_bgr, conf=0.3, margin=0.3, feather=3):
     analysis = analyze_face(img_bgr, conf=conf, margin=margin)
     if analysis is None:
         return None
-    crop, face_mask = analysis["crop"], analysis["face_mask"]
+    crop, face_mask = analysis["crop_original"], analysis["face_mask"]  # the user's own pixels, not the CLAHE'd ones
 
     if feather > 0:
         face_mask = cv2.GaussianBlur(face_mask, (feather * 2 + 1, feather * 2 + 1), 0)
