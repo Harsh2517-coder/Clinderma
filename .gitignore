@@ -1,0 +1,9 @@
+.env
+data/
+__pycache__/
+*.pyc
+# results/ holds logs and per-photo files named after Clinderma patients (phone numbers): never commit them. Only the three aggregate summaries are kept.
+results/*
+!results/accuracy_by_zone.json
+!results/spot_filter_cv.json
+!results/simulation_results.json

@@ -1,0 +1,457 @@
+{
+ "assumptions": {
+  "base_logit": -2.8,
+  "latent_beta": 0.8,
+  "reported_beta": 1.2,
+  "scenarios": {
+   "null": 0.0,
+   "weak": 0.25,
+   "moderate": 0.5,
+   "strong": 0.8
+  },
+  "scanner_recall_precision": [
+   [
+    0.492,
+    0.57,
+    0.58,
+    0.111,
+    0.472
+   ],
+   [
+    0.335,
+    0.353,
+    0.36,
+    0.103,
+    0.304
+   ]
+  ]
+ },
+ "auc": {
+  "null": {
+   "digestive": {
+    "prevalence": 0.13,
+    "auc_intake_only": 0.704,
+    "auc_with_zones": 0.704,
+    "gain": 0.0,
+    "gain_ci95": [
+     -0.003,
+     0.003
+    ]
+   },
+   "endocrine": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.695,
+    "gain": 0.0,
+    "gain_ci95": [
+     -0.002,
+     0.003
+    ]
+   },
+   "respiratory": {
+    "prevalence": 0.113,
+    "auc_intake_only": 0.684,
+    "auc_with_zones": 0.681,
+    "gain": -0.003,
+    "gain_ci95": [
+     -0.009,
+     0.003
+    ]
+   },
+   "liver": {
+    "prevalence": 0.108,
+    "auc_intake_only": 0.694,
+    "auc_with_zones": 0.694,
+    "gain": 0.0,
+    "gain_ci95": [
+     -0.003,
+     0.004
+    ]
+   },
+   "cardiac": {
+    "prevalence": 0.122,
+    "auc_intake_only": 0.724,
+    "auc_with_zones": 0.725,
+    "gain": 0.002,
+    "gain_ci95": [
+     -0.001,
+     0.004
+    ]
+   },
+   "reproductive": {
+    "prevalence": 0.065,
+    "auc_intake_only": 0.793,
+    "auc_with_zones": 0.795,
+    "gain": 0.002,
+    "gain_ci95": [
+     -0.002,
+     0.005
+    ]
+   },
+   "kidney": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.693,
+    "gain": -0.002,
+    "gain_ci95": [
+     -0.005,
+     0.001
+    ]
+   },
+   "stress_sleep": {
+    "prevalence": 0.121,
+    "auc_intake_only": 0.711,
+    "auc_with_zones": 0.709,
+    "gain": -0.002,
+    "gain_ci95": [
+     -0.004,
+     0.0
+    ]
+   }
+  },
+  "weak": {
+   "digestive": {
+    "prevalence": 0.13,
+    "auc_intake_only": 0.704,
+    "auc_with_zones": 0.707,
+    "gain": 0.003,
+    "gain_ci95": [
+     -0.001,
+     0.008
+    ]
+   },
+   "endocrine": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.694,
+    "gain": -0.001,
+    "gain_ci95": [
+     -0.003,
+     0.002
+    ]
+   },
+   "respiratory": {
+    "prevalence": 0.113,
+    "auc_intake_only": 0.684,
+    "auc_with_zones": 0.691,
+    "gain": 0.008,
+    "gain_ci95": [
+     -0.001,
+     0.015
+    ]
+   },
+   "liver": {
+    "prevalence": 0.108,
+    "auc_intake_only": 0.694,
+    "auc_with_zones": 0.696,
+    "gain": 0.002,
+    "gain_ci95": [
+     -0.002,
+     0.006
+    ]
+   },
+   "cardiac": {
+    "prevalence": 0.122,
+    "auc_intake_only": 0.724,
+    "auc_with_zones": 0.727,
+    "gain": 0.003,
+    "gain_ci95": [
+     0.0,
+     0.005
+    ]
+   },
+   "reproductive": {
+    "prevalence": 0.065,
+    "auc_intake_only": 0.793,
+    "auc_with_zones": 0.796,
+    "gain": 0.003,
+    "gain_ci95": [
+     -0.002,
+     0.007
+    ]
+   },
+   "kidney": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.689,
+    "gain": -0.006,
+    "gain_ci95": [
+     -0.01,
+     -0.002
+    ]
+   },
+   "stress_sleep": {
+    "prevalence": 0.121,
+    "auc_intake_only": 0.711,
+    "auc_with_zones": 0.711,
+    "gain": 0.001,
+    "gain_ci95": [
+     -0.003,
+     0.003
+    ]
+   }
+  },
+  "moderate": {
+   "digestive": {
+    "prevalence": 0.13,
+    "auc_intake_only": 0.704,
+    "auc_with_zones": 0.71,
+    "gain": 0.006,
+    "gain_ci95": [
+     -0.0,
+     0.013
+    ]
+   },
+   "endocrine": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.695,
+    "gain": 0.001,
+    "gain_ci95": [
+     -0.004,
+     0.006
+    ]
+   },
+   "respiratory": {
+    "prevalence": 0.113,
+    "auc_intake_only": 0.684,
+    "auc_with_zones": 0.699,
+    "gain": 0.015,
+    "gain_ci95": [
+     0.007,
+     0.024
+    ]
+   },
+   "liver": {
+    "prevalence": 0.108,
+    "auc_intake_only": 0.694,
+    "auc_with_zones": 0.701,
+    "gain": 0.007,
+    "gain_ci95": [
+     -0.0,
+     0.015
+    ]
+   },
+   "cardiac": {
+    "prevalence": 0.122,
+    "auc_intake_only": 0.724,
+    "auc_with_zones": 0.727,
+    "gain": 0.003,
+    "gain_ci95": [
+     -0.0,
+     0.007
+    ]
+   },
+   "reproductive": {
+    "prevalence": 0.065,
+    "auc_intake_only": 0.793,
+    "auc_with_zones": 0.796,
+    "gain": 0.003,
+    "gain_ci95": [
+     -0.002,
+     0.008
+    ]
+   },
+   "kidney": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.694,
+    "gain": -0.001,
+    "gain_ci95": [
+     -0.007,
+     0.004
+    ]
+   },
+   "stress_sleep": {
+    "prevalence": 0.121,
+    "auc_intake_only": 0.711,
+    "auc_with_zones": 0.721,
+    "gain": 0.011,
+    "gain_ci95": [
+     0.006,
+     0.015
+    ]
+   }
+  },
+  "strong": {
+   "digestive": {
+    "prevalence": 0.13,
+    "auc_intake_only": 0.704,
+    "auc_with_zones": 0.722,
+    "gain": 0.018,
+    "gain_ci95": [
+     0.011,
+     0.026
+    ]
+   },
+   "endocrine": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.695,
+    "gain": 0.0,
+    "gain_ci95": [
+     -0.004,
+     0.004
+    ]
+   },
+   "respiratory": {
+    "prevalence": 0.113,
+    "auc_intake_only": 0.684,
+    "auc_with_zones": 0.714,
+    "gain": 0.031,
+    "gain_ci95": [
+     0.021,
+     0.041
+    ]
+   },
+   "liver": {
+    "prevalence": 0.108,
+    "auc_intake_only": 0.694,
+    "auc_with_zones": 0.716,
+    "gain": 0.021,
+    "gain_ci95": [
+     0.015,
+     0.03
+    ]
+   },
+   "cardiac": {
+    "prevalence": 0.122,
+    "auc_intake_only": 0.724,
+    "auc_with_zones": 0.733,
+    "gain": 0.009,
+    "gain_ci95": [
+     0.004,
+     0.014
+    ]
+   },
+   "reproductive": {
+    "prevalence": 0.065,
+    "auc_intake_only": 0.793,
+    "auc_with_zones": 0.799,
+    "gain": 0.006,
+    "gain_ci95": [
+     0.001,
+     0.011
+    ]
+   },
+   "kidney": {
+    "prevalence": 0.111,
+    "auc_intake_only": 0.695,
+    "auc_with_zones": 0.697,
+    "gain": 0.002,
+    "gain_ci95": [
+     -0.003,
+     0.007
+    ]
+   },
+   "stress_sleep": {
+    "prevalence": 0.121,
+    "auc_intake_only": 0.711,
+    "auc_with_zones": 0.73,
+    "gain": 0.02,
+    "gain_ci95": [
+     0.012,
+     0.027
+    ]
+   }
+  }
+ },
+ "power": {
+  "digestive@0.25": {
+   "300": 0.1,
+   "1000": 0.2,
+   "3000": 0.325,
+   "10000": 0.875
+  },
+  "digestive@0.5": {
+   "300": 0.25,
+   "1000": 0.175,
+   "3000": 0.775,
+   "10000": 1.0
+  },
+  "stress_sleep@0.25": {
+   "300": 0.125,
+   "1000": 0.15,
+   "3000": 0.325,
+   "10000": 0.8
+  },
+  "stress_sleep@0.5": {
+   "300": 0.125,
+   "1000": 0.3,
+   "3000": 0.875,
+   "10000": 1.0
+  },
+  "endocrine@0.25": {
+   "300": 0.075,
+   "1000": 0.025,
+   "3000": 0.025,
+   "10000": 0.2
+  },
+  "endocrine@0.5": {
+   "300": 0.15,
+   "1000": 0.025,
+   "3000": 0.2,
+   "10000": 0.625
+  }
+ },
+ "product_model": {
+  "scenario": "moderate",
+  "link": 0.5,
+  "n_train": 40000,
+  "systems": [
+   "digestive",
+   "endocrine",
+   "respiratory",
+   "liver",
+   "cardiac",
+   "reproductive",
+   "kidney",
+   "stress_sleep"
+  ],
+  "tier_cutoffs": [
+   [
+    0.08202112630169567,
+    0.15894299656742222
+   ],
+   [
+    0.06639039108293023,
+    0.1068878944990131
+   ],
+   [
+    0.06940564428206637,
+    0.12955484500672235
+   ],
+   [
+    0.07110581393252177,
+    0.12368970558394067
+   ],
+   [
+    0.07518855837196277,
+    0.15402987265199222
+   ],
+   [
+    0.01082739870258399,
+    0.07611613178629494
+   ],
+   [
+    0.06736582748502465,
+    0.09638715132961256
+   ],
+   [
+    0.07586533745341867,
+    0.1370380504961386
+   ]
+  ],
+  "synthetic_test_auc": {
+   "digestive": 0.717,
+   "endocrine": 0.718,
+   "respiratory": 0.709,
+   "liver": 0.712,
+   "cardiac": 0.73,
+   "reproductive": 0.806,
+   "kidney": 0.689,
+   "stress_sleep": 0.718
+  },
+  "note": "Trained on a SYNTHETIC cohort with an ASSUMED face-map link. Qualitative tiers only; not clinical evidence."
+ }
+}

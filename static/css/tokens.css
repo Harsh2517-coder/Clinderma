@@ -1,0 +1,87 @@
+/* Design tokens — the single source for colour, type, spacing, radius, elevation.
+   Palette is taken from the supplied UI4 designs (navy #325385, blue #4674B9,
+   orange #ED7639) and adjusted ONLY where the originals fail WCAG AA:
+     white on #ED7639 is 2.9:1  -> buttons use --orange-700 (5.2:1)
+     muted #8A8A8A on white 3.5:1 -> --ink-500 #6B6B6B (5.3:1)
+   The brand orange stays for accents and graphics, never for text-bearing fills. */
+:root {
+  /* brand */
+  --navy-900: #1f3556;
+  --navy-800: #274269;
+  --navy-700: #325385;
+  --blue-600: #2f5e9e;
+  --blue-500: #4674b9;
+  --blue-100: #d7e3f4;
+  --blue-50: #eaf0f8;
+  --orange-500: #ed7639;   /* accent / graphics only */
+  --orange-700: #b84a16;   /* text-bearing fills */
+  --orange-800: #9c3e10;
+  --orange-50: #fdf0e8;
+
+  /* neutrals */
+  --ink-900: #1c1c1c;
+  --ink-700: #3a3a3a;
+  --ink-500: #6b6b6b;
+  --ink-400: #8a8a8a;      /* decorative only (icons, disabled) */
+  --line: #d9d9d9;
+  --line-soft: #ececec;
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-alt: #f5f6f8;
+
+  /* status */
+  --green-700: #1f6b24;
+  --green-50: #e5f2e6;
+  --green-200: #b9dcbc;
+  --red-700: #a82e22;
+  --red-50: #fdecea;
+  --red-200: #f2bdb7;
+  --amber-800: #8a5a00;
+  --amber-50: #fff3d6;
+  --amber-200: #f0d58f;
+  --info-700: #2f5e9e;
+  --info-50: #eaf0f8;
+
+  /* type */
+  --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --leading: 1.5;
+
+  /* space (4px grid) */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+
+  /* shape + elevation */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(20, 30, 50, 0.06);
+  --shadow-md: 0 4px 14px rgba(20, 30, 50, 0.1);
+  --shadow-lg: 0 12px 40px rgba(20, 30, 50, 0.22);
+
+  /* layout */
+  --topbar-h: 64px;
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 68px;
+  --content-max: 1240px;
+  --focus: 0 0 0 3px rgba(70, 116, 185, 0.45);
+
+  /* z-index ladder */
+  --z-topbar: 30;
+  --z-sidebar: 40;
+  --z-overlay: 50;
+  --z-modal: 60;
+  --z-toast: 80;
+}

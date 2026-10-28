@@ -1,0 +1,12 @@
+/* Page-specific layout only; everything reusable lives in components.css. */
+.split { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: var(--s-5); align-items: start; }
+@media (max-width: 1023px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.college-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.step-card { max-width: 920px; }
+.success-panel { display: grid; justify-items: center; gap: var(--s-3); text-align: center; padding: var(--s-6) var(--s-4); }
+.success-panel .tick { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--green-50); color: var(--green-700); }
+.success-panel .tick .icon { width: 30px; height: 30px; }
+.inline-form { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: flex-end; }
+.inline-form .field { flex: 1 1 200px; }
+.cost-table td.num { font-variant-numeric: tabular-nums; }
+.cost-total td { font-weight: 700; border-top: 2px solid var(--line); }

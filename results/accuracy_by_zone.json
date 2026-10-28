@@ -1,0 +1,50 @@
+{
+ "photos": 150,
+ "scanned": 139,
+ "zones": {
+  "forehead": {
+   "gt": 178,
+   "recall": 0.82,
+   "scan_boxes": 3232,
+   "precision": 0.078
+  },
+  "left_cheek": {
+   "gt": 179,
+   "recall": 0.939,
+   "scan_boxes": 4342,
+   "precision": 0.074
+  },
+  "right_cheek": {
+   "gt": 179,
+   "recall": 0.86,
+   "scan_boxes": 4440,
+   "precision": 0.066
+  },
+  "nose": {
+   "gt": 31,
+   "recall": 0.806,
+   "scan_boxes": 876,
+   "precision": 0.038
+  },
+  "chin": {
+   "gt": 66,
+   "recall": 0.833,
+   "scan_boxes": 2296,
+   "precision": 0.041
+  }
+ },
+ "overall": {
+  "gt": 633,
+  "recall": 0.866,
+  "scan_boxes": 15186,
+  "precision": 0.066,
+  "lesions_outside_any_zone": 52
+ },
+ "most_affected_zone": {
+  "images": 87,
+  "exact_match": 0.276,
+  "within_scan_top2": 0.54,
+  "chance_exact": 0.2
+ },
+ "total_count_spearman": 0.361
+}

@@ -1,0 +1,41 @@
+{
+ "threshold": 0.16,
+ "cv_auc": 0.855,
+ "photos": 555,
+ "validation": "person-grouped 5-fold cross-validation on expert-labelled photos",
+ "unfiltered": {
+  "recall": 0.859,
+  "precision": 0.062,
+  "agree": 0.275,
+  "top2": 0.546
+ },
+ "filtered": {
+  "recall": 0.528,
+  "precision": 0.341,
+  "agree": 0.481,
+  "top2": 0.723,
+  "kept_per_photo": 9.748
+ },
+ "zones": {
+  "forehead": {
+   "recall": 0.492,
+   "precision": 0.335
+  },
+  "left_cheek": {
+   "recall": 0.57,
+   "precision": 0.353
+  },
+  "right_cheek": {
+   "recall": 0.58,
+   "precision": 0.36
+  },
+  "nose": {
+   "recall": 0.111,
+   "precision": 0.103
+  },
+  "chin": {
+   "recall": 0.472,
+   "precision": 0.304
+  }
+ }
+}
