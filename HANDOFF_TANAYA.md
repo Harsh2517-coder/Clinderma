@@ -2,7 +2,7 @@
 
 Roboflow would not let the model weights be downloaded, so Harsh trained a new RF-DETR small on the same dataset (Roboflow `tanayaaa/acne-detection-v1-tjjbs` v2) on his Mac.
 Everything is in [`training/`](training/README.md): scripts, class list, accuracy numbers, training curve.
-The trained model (`rfdetr-small.onnx`, `acne_rfdetr_small.pth`) is too big for the git branch, so it is a download on the GitHub Release **acne-detector-v1** of this repo.
+The trained model (`rfdetr-small.onnx`, `acne_rfdetr_small.pth`) is over GitHub's 100 MB limit, so it is not in the repo: Harsh sends it directly (folder `FaceVeda_acne_detector`).
 
 - Classes: comedone, nodule, papule, pustule (4; the dataset has no cyst). Accuracy on 71 never-seen photos: about 42% of detections correct, about 39% of lesions found (confidence 0.30).
 - Not needed any more from section 2 below: the model file. Still useful from Tanaya: her **5-class dataset** (`ACNE_COMBINED_DATASET`, with cyst) to train a better model, and a GPU machine for more epochs.

@@ -2,8 +2,8 @@
 
 A local retrain of the acne detector, because the Roboflow-hosted model's weights could not be downloaded. **Not Tanaya's original model**; accuracy was measured fresh.
 
-## Get the trained model (not stored in the git branch: over GitHub's 100 MB file limit)
-Download `rfdetr-small.onnx` (and `acne_rfdetr_small.pth`) from the GitHub Release **acne-detector-v1** of this repo, check the hash in `notes.txt`, and put the ONNX in `models/`.
+## Get the trained model (not on GitHub: the files are over the 100 MB limit)
+`rfdetr-small.onnx` (123 MB) and `acne_rfdetr_small.pth` (128 MB) are sent directly by Harsh (folder `FaceVeda_acne_detector`). Check the sha256 in `notes.txt`, and put the ONNX in `models/`.
 
 ## Results (71 never-seen test photos, IoU 0.5), see `notes.txt` and `test_results.json`
 Best balance at confidence 0.30: about 42% of detections correct, about 39% of lesions found. Classes: comedone, nodule, papule, pustule (no cyst).
