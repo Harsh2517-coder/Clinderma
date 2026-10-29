@@ -1,6 +1,16 @@
-mediapipe==0.10.14
-opencv-python==4.10.0.84
+# Streamlit application
+streamlit
+
+# Deep learning model
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Image processing and numerical operations
 numpy==1.26.4
 Pillow>=10.0.0
-torch>=2.0.0
+opencv-python==4.10.0.84
+matplotlib
+
+# Include only if imported by streamlit_app.py or the model/preprocessing code
+mediapipe==0.10.14
 transformers>=4.40.0
