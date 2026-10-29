@@ -1,6 +1,7 @@
-"""Creates demo data: 1 admin, 3 doctors, 3 patients with intake forms, scans and appointments. Safe to re-run (rebuilds the demo DB).
-DEMO LOGINS (local prototype only):   admin@demo.local / doctor1..3@demo.local / patient1..3@demo.local   password for all: Demo-pass-2026"""
-import json, os
+"""Creates demo data (rebuilds the demo DB every time).  python3 seed.py = large demo: 8 doctors, ~36 patients with many scans using REAL photos (stored, visible only to the patient and their doctors),
+switched doctors and a full calendar. Needs the photo cache: python3 demo_data.py build ~/Downloads/patients_part1.   python3 seed.py --quick = the small synthetic demo (no photos).
+DEMO LOGINS (local prototype only):   admin@demo.local / doctor1..8@demo.local / patient1..36@demo.local   password for all: Demo-pass-2026"""
+import json, os, sys
 from datetime import datetime, timedelta
 
 import app as A
@@ -12,7 +13,7 @@ HISTORY = {"Riya Shah": ([57, 50, 43, 36, 29, 8], [1.7, 1.55, 1.4, 1.25, 1.1, 1.
            "Arjun Mehta": ([21, 14, 3], [1.3, 1.15, 1.0]), "Li Na": ([12, 5], [1.2, 1.0])}
 
 
-def main():
+def quick():
     if os.path.exists(A.DB_PATH): os.remove(A.DB_PATH)
     A.init_db(); db = A.connect(); now = datetime.now().isoformat(timespec="seconds")
     def user(role, name, email): return db.execute("INSERT INTO users(role,name,email,pw_hash,created) VALUES(?,?,?,?,?)", (role, name, email, A.hash_pw(PW), now)).lastrowid
@@ -55,6 +56,12 @@ def main():
     appt(docs[2], pats[1], t0 - timedelta(days=100), "completed", "General check-up", "Mild seasonal skin dryness; advised hydration and sesame-oil massage. Review if forehead spots appear.")
     appt(docs[0], pats[1], nxt(2, 11, 0), "booked", "New spots on forehead")
     db.commit(); db.close(); print("demo database ready:", A.DB_PATH)
+
+
+def main():
+    if "--quick" in sys.argv: return quick()
+    import demo_data, reminders
+    demo_data.build_big_demo(A, insights, reminders)
 
 
 if __name__ == "__main__":

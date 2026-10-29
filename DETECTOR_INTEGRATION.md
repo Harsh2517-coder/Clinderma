@@ -1,5 +1,14 @@
 # Plugging in the Roboflow-trained acne detector
 
+## Status (what we know from the friend)
+- Model: **RF-DETR small** (Roboflow id `tanayaaa/acne-detection-v1-tjjbs-2-rfdetr-small-t1`), trained on **plain photos**, so use `DETECTOR_INPUT=full`.
+- Classes (from the friend's notes, to be confirmed in index order): comedone, papule, pustule, nodule, cyst.
+- **The model file is not available yet.** On GitHub, `tanaya1806/clinderma_acne` has only the `main` branch (no model file, release, fork or LFS), and her backend still calls the hosted Roboflow API.
+  Her new branch has not been pushed, or is in a repo we cannot see. The file must come from her directly (branch push, or a file transfer).
+- Still needed: the model file, the exact class order, the input size (512 expected for RF-DETR small), and which photos were in Roboflow's **test split** (so accuracy is not measured on training photos).
+- We do not use the Roboflow API key: it would upload patient photos to a third party.
+
+
 The platform runs the detector **locally**, so patient photos never leave the machine. That is why the hosted Roboflow API is not used: it would upload every patient's face to a third party.
 The detector tells the platform where the acne-type spots are; the platform then counts them per face zone.
 

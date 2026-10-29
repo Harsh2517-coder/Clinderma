@@ -1,5 +1,5 @@
 """Core rules of the platform. Run: python3 -m pytest -q test_core.py   (uses a throw-away database)"""
-import os, tempfile
+import json, os, tempfile
 os.environ["WELLNESS_DB"] = os.path.join(tempfile.mkdtemp(), "t.db"); os.environ["WELLNESS_DEV"] = "1"; os.environ.pop("SMTP_HOST", None)
 from datetime import datetime, timedelta
 
@@ -297,3 +297,147 @@ def test_scan_report_carries_simulated_outlook(world, monkeypatch):
     import scan as scan_mod
     monkeypatch.setattr(scan_mod, "scan_image", _fake_scan); p = new_patient("Sim", "sim@t.io"); img = _img_b64()
     r = p.post("/api/patient/scan", json={"front": img, "left": img, "right": img}).json()["report"]; assert r["simulated_outlook"]["simulated"] is True and len(r["simulated_outlook"]["tiers"]) == 8
+
+
+def _scan_with_photos(client_, monkeypatch):
+    import scan as scan_mod
+    monkeypatch.setattr(scan_mod, "scan_image", _fake_scan); img = _img_b64()
+    r = client_.post("/api/patient/scan", json={"front": img, "left": img, "right": img}); assert r.status_code == 200, r.text; return r.json()["scan_id"]
+
+
+def test_scan_photos_visible_only_to_the_patient_and_every_doctor_they_have_had(world, monkeypatch):
+    p = new_patient("Pho", "pho@t.io"); pick(p, world["d1"]); sid = _scan_with_photos(p, monkeypatch); pid = p.get("/api/me").json()["id"]
+    url = f"/api/scans/{sid}/photo/front/original"
+    r = p.get(url); assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg" and r.headers["cache-control"] == "private, no-store" and r.content[:2] == b"\xff\xd8"
+    assert p.get(f"/api/scans/{sid}/photo/left/annotated").status_code == 200
+    d1, d2, ad = login("d1@t.io"), login("d2@t.io"), login("admin@t.io")
+    assert d1.get(url).status_code == 200                                                       # the patient's doctor
+    assert d2.get(url).status_code == 404                                                       # a doctor with no link
+    assert ad.get(url).status_code == 403                                                       # admins never see face photos
+    assert client().get(url).status_code == 401 and new_patient("Oth", "oth@t.io").get(url).status_code == 404
+    assert p.get(f"/api/scans/{sid}/photo/front/nothing").status_code == 404
+    assert p.post("/api/patient/switch-doctor", json={"doctor_id": world["d2"]}).status_code == 200
+    assert d1.get(url).status_code == 200 and d2.get(url).status_code == 200                    # former AND current doctor can see the photos
+    scans_d2 = d2.get(f"/api/doctor/patients/{pid}").json()["scans"]; assert scans_d2[0]["id"] == sid and scans_d2[0]["photos"] == ["front", "left", "right"]
+    assert p.get("/api/patient/scans").json()[0]["photos"] == ["front", "left", "right"]
+    a = ad.get(f"/api/admin/patients/{pid}").json(); assert "scans" not in a and "progress" not in a and a["scan_summary"]["count"] >= 1 and a["scan_summary"]["private"] is True
+
+
+def test_admin_view_as_is_read_only_hides_photos_and_is_reversible(world, monkeypatch):
+    p = new_patient("Vas", "vas@t.io"); pick(p, world["d1"]); sid = _scan_with_photos(p, monkeypatch); pid = p.get("/api/me").json()["id"]
+    ad = login("admin@t.io"); users = ad.get("/api/admin/users?role=doctor").json(); assert {u["id"] for u in users} >= {world["d1"], world["d2"]} and ad.get("/api/admin/users?role=patient").json()
+    assert login("d1@t.io").get("/api/admin/users").status_code == 403 and ad.get("/api/admin/users?role=admin").status_code == 422
+    assert ad.post("/api/admin/view-as", json={"user_id": 999999}).status_code == 404
+    assert ad.post("/api/admin/view-as", json={"user_id": world["d1"]}).status_code == 200
+    me = ad.get("/api/me").json(); assert me["role"] == "doctor" and me["viewing_as"]["admin_name"] == "Admin"
+    assert ad.get("/api/doctor/summary").status_code == 200                                      # the doctor's screens load
+    assert ad.get("/api/admin/users?role=patient").status_code == 200                            # the preview can list people to jump to another preview
+    assert ad.get("/api/admin/stats").status_code == 403                                         # but no other admin data
+    assert ad.get(f"/api/scans/{sid}/photo/front/original").status_code == 403                     # but photos stay hidden
+    assert ad.post("/api/doctor/appointments/1/note", json={"summary": "x"}).status_code == 403    # nothing can be changed
+    assert ad.put("/api/me/password", json={"current": PW, "new": "another-pass-9"}).status_code == 403
+    assert ad.post("/api/admin/view-as", json={"user_id": world["d2"]}).status_code == 403
+    assert ad.post("/api/view-as/exit").status_code == 200 and ad.get("/api/me").json()["role"] == "admin" and ad.get("/api/me").json()["viewing_as"] is None
+    assert ad.post("/api/view-as/exit").status_code == 409                                       # not viewing as anyone any more
+    assert ad.post("/api/admin/view-as", json={"user_id": pid}).status_code == 200 and ad.get("/api/patient/scans").status_code == 200 and ad.get("/api/me").json()["role"] == "patient"
+    assert ad.get(f"/api/scans/{sid}/photo/front/original").status_code == 403                     # viewing as the patient does not reveal their photos either
+    ad.post("/api/view-as/exit"); assert p.post("/api/admin/view-as", json={"user_id": world["d1"]}).status_code == 403
+
+
+def test_change_password():
+    c = new_patient("Pwd", "pwd@t.io"); assert c.get("/api/me").json()["email"] == "pwd@t.io"
+    assert c.put("/api/me/password", json={"current": "wrong-password", "new": "new-password-1"}).status_code == 403
+    assert c.put("/api/me/password", json={"current": PW, "new": "short"}).status_code == 422
+    assert c.put("/api/me/password", json={"current": PW, "new": PW}).status_code == 422
+    assert c.put("/api/me/password", json={"current": PW, "new": "new-password-1"}).status_code == 200
+    assert client().post("/api/login", json={"email": "pwd@t.io", "password": PW}).status_code == 401 and client().post("/api/login", json={"email": "pwd@t.io", "password": "new-password-1"}).status_code == 200
+
+
+def test_detect_view_from_cheek_areas():
+    import numpy as np, scan as S
+    m = lambda n: np.ones((10, max(1, n)), bool)
+    assert S.detect_view({"left_cheek": m(100), "right_cheek": m(90)}) == "front"
+    assert S.detect_view({"left_cheek": m(300), "right_cheek": m(20)}) == "left"          # the person's left cheek is the visible one
+    assert S.detect_view({"left_cheek": m(15), "right_cheek": m(200)}) == "right"
+    assert S.detect_view({"left_cheek": m(1), "right_cheek": m(1)}) == "front"
+
+
+def _booked(p, did, world):
+    pick(p, did); slot = first_slot(p); return p.post("/api/appointments", json={"start": slot, "reason": "visit"}).json()["id"], slot
+
+
+def _free_slot_for(c, aid, last=True):
+    s = c.get(f"/api/appointments/{aid}/slots").json(); day = sorted(s)[0]; return f"{day} {s[day][-1 if last else 0]}"
+
+
+def test_patient_reschedules_to_a_free_slot_old_slot_is_freed_and_both_are_emailed(world):
+    p = new_patient("Rs1", "rs1@t.io"); aid, slot = _booked(p, world["d1"], world); new = _free_slot_for(p, aid)
+    r = p.post(f"/api/appointments/{aid}/reschedule", json={"start": new, "reason": "clash with work"}); assert r.status_code == 200, r.text
+    a = [x for x in p.get("/api/patient/appointments").json() if x["id"] == aid][0]
+    assert a["start_ts"] == new and a["reschedule_count"] == 1 and a["rescheduled_from"] == slot and a["rescheduled_by"] == "patient" and a["display_status"] == "booked"
+    other = new_patient("Rs2", "rs2@t.io"); pick(other, world["d1"]); day, hhmm = slot.split(); assert hhmm in other.get("/api/slots").json().get(day, [])      # the old slot is bookable again
+    rows = login("admin@t.io").get("/api/admin/emails").json()["rows"]; kinds = {(x["to_addr"], x["kind"]) for x in rows}
+    assert ("rs1@t.io", "appt_resched") in kinds and ("d1@t.io", "appt_resched_doctor") in kinds
+    assert not any("clash with work" in x.get("subject", "") for x in rows)                                                      # a patient's reason is never put in an email
+
+
+def test_reschedule_rules_validation_and_ownership(world):
+    p = new_patient("Rs3", "rs3@t.io"); aid, slot = _booked(p, world["d1"], world); q = new_patient("Rs4", "rs4@t.io"); qid, qslot = _booked(q, world["d1"], world)
+    url = f"/api/appointments/{aid}/reschedule"
+    assert p.post(url, json={"start": qslot}).status_code == 409                    # someone else holds that slot
+    assert p.post(url, json={"start": slot}).status_code == 409                     # already the current time
+    assert p.post(url, json={"start": "2020-01-06 10:00"}).status_code == 409       # the past
+    assert p.post(url, json={"start": "garbage"}).status_code == 422
+    assert q.post(url, json={"start": _free_slot_for(p, aid)}).status_code == 404   # not their appointment
+    assert login("d2@t.io").post(url, json={"start": _free_slot_for(p, aid)}).status_code == 404       # another doctor's patient
+    assert login("admin@t.io").post(url, json={"start": _free_slot_for(p, aid)}).status_code == 404    # admins cannot move appointments
+    assert client().post(url, json={"start": slot}).status_code == 401
+    assert login("d1@t.io").get(f"/api/appointments/{aid}/slots").status_code == 200 and login("d2@t.io").get(f"/api/appointments/{aid}/slots").status_code == 404
+    assert p.delete(f"/api/appointments/{aid}").status_code == 200
+    assert p.post(url, json={"start": _free_slot_for(q, qid)}).status_code == 409   # a cancelled appointment cannot be rescheduled
+
+
+def test_doctor_reschedules_at_the_last_moment_and_patient_is_told(world):
+    p = new_patient("Rs5", "rs5@t.io"); aid, slot = _booked(p, world["d1"], world); d1 = login("d1@t.io"); new = _free_slot_for(d1.__class__ and p, aid)
+    r = d1.post(f"/api/appointments/{aid}/reschedule", json={"start": new, "reason": "Doctor unavailable"}); assert r.status_code == 200 and r.json()["rescheduled_by"] == "doctor"
+    a = [x for x in p.get("/api/patient/appointments").json() if x["id"] == aid][0]; assert a["rescheduled_by"] == "doctor" and a["reschedule_reason"] == "Doctor unavailable" and a["start_ts"] == new
+    assert any(x["id"] == aid and x["start_ts"] == new for x in d1.get("/api/doctor/summary").json()["upcoming"])
+    mail = [x for x in login("admin@t.io").get("/api/admin/emails").json()["rows"] if x["to_addr"] == "rs5@t.io" and x["kind"] == "appt_resched"]; assert mail
+    db = A.connect(); body = db.execute("SELECT body FROM email_log WHERE to_addr='rs5@t.io' AND kind='appt_resched'").fetchone()["body"]; db.close(); assert "Doctor unavailable" in body and "Was:" in body
+    assert db is not None and d1.post(f"/api/appointments/{aid}/reschedule", json={"start": new}).status_code == 409           # same time as now
+
+
+def test_missed_status_is_derived_and_missed_appointments_cannot_be_rescheduled(world):
+    p = new_patient("Mis", "mis@t.io"); pick(p, world["d1"]); pid = p.get("/api/me").json()["id"]; db = A.connect()
+    past = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M"); end = (datetime.now() - timedelta(days=2) + timedelta(minutes=20)).strftime("%Y-%m-%d %H:%M")
+    aid = db.execute("INSERT INTO appointments(doctor_id,patient_id,start_ts,end_ts,status,reason) VALUES(?,?,?,?,'booked','old')", (world["d1"], pid, past, end)).lastrowid; db.commit(); db.close()
+    mine = [x for x in p.get("/api/patient/appointments").json() if x["id"] == aid][0]; assert mine["status"] == "booked" and mine["display_status"] == "missed"
+    prev = [x for x in login("d1@t.io").get("/api/doctor/summary").json()["previous"] if x["id"] == aid][0]; assert prev["display_status"] == "missed"
+    assert p.post(f"/api/appointments/{aid}/reschedule", json={"start": _free_slot_for(p, aid)}).status_code == 409
+
+
+def test_reminder_is_sent_again_for_the_new_time_after_a_reschedule(world):
+    import reminders
+    p = new_patient("Rrm", "rrm@t.io"); aid, slot = _booked(p, world["d1"], world); db = A.connect(); t0 = datetime.strptime(slot, "%Y-%m-%d %H:%M") - timedelta(hours=3)
+    assert any(k == "appt_reminder" and to == "rrm@t.io" for k, to, st in reminders.run_reminders(db, t0))
+    new = _free_slot_for(p, aid, last=False); p.post(f"/api/appointments/{aid}/reschedule", json={"start": new})
+    again = [st for k, to, st in reminders.run_reminders(db, datetime.strptime(new, "%Y-%m-%d %H:%M") - timedelta(hours=3)) if k == "appt_reminder" and to == "rrm@t.io"]; db.close()
+    assert again == ["dry_run"]
+
+
+def test_admin_analytics_is_correct_aggregate_only_and_admin_only(world):
+    ad = login("admin@t.io"); r = ad.get("/api/admin/analytics"); assert r.status_code == 200; d = r.json(); db = A.connect()
+    n = lambda q: db.execute(q).fetchone()[0]; now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    assert d["totals"]["doctors"] == n("select count(*) from doctors") and d["totals"]["patients"] == n("select count(*) from patients") and d["appointments"]["cancelled"] == n("select count(*) from appointments where status='cancelled'")
+    assert d["appointments"]["completed"] == n("select count(*) from appointments where status='completed'")
+    assert d["appointments"]["missed"] == n(f"select count(*) from appointments where status='booked' and end_ts < '{now}'") and sum(d["appointments"][k] for k in ("completed", "upcoming", "missed", "cancelled")) == d["totals"]["appointments"]
+    rec = d["recovery"]; assert rec["improved"] + rec["stable"] + rec["worsened"] + rec["insufficient"] == d["totals"]["patients"] and sum(rec["histogram"]["counts"]) == rec["improved"] + rec["stable"] + rec["worsened"]
+    assert len(d["weekly"]) == 12 and len(d["by_weekday"]) == 7 and {x["name"] for x in d["doctors"]} >= {"Dr One", "Dr Two"}
+    names = {r_["name"] for r_ in db.execute("select name from users where role='patient'")} | {r_["email"] for r_ in db.execute("select email from users where role='patient'")}; db.close()
+    def strings(o):
+        if isinstance(o, str): yield o
+        elif isinstance(o, dict): yield from (s_ for k, v in o.items() for s_ in (*strings(k), *strings(v)))
+        elif isinstance(o, list): yield from (s_ for v in o for s_ in strings(v))
+    vals = set(strings(d)); blob = json.dumps(d)
+    assert names.isdisjoint(vals) and "report" not in blob and "photo" not in blob and "zone" not in blob      # aggregates only: no patient names/emails, no scan results or photos
+    assert login("d1@t.io").get("/api/admin/analytics").status_code == 403 and new_patient("An", "an@t.io").get("/api/admin/analytics").status_code == 403 and client().get("/api/admin/analytics").status_code == 401

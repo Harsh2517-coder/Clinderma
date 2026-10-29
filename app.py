@@ -4,7 +4,7 @@ import base64, hashlib, hmac, json, os, secrets, sqlite3, time
 from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -15,6 +15,8 @@ mailer.load_env(os.path.join(HERE, ".env"))       # SMTP settings for real email
 DEV = os.environ.get("WELLNESS_DEV") == "1"       # enables the test-only endpoint that accepts raw zone counts
 DB_PATH = os.environ.get("WELLNESS_DB", os.path.join(HERE, "data", "platform.db"))
 SESSION_SECONDS = 8 * 3600
+VIEW_AS_SECONDS = 2 * 3600          # an admin "view as" session is shorter and read-only
+PHOTO_DIR = os.path.join(os.path.dirname(DB_PATH), "scan_photos")
 BOOKING_WINDOW_DAYS = 60
 
 SCHEMA = """
@@ -30,13 +32,19 @@ CREATE TABLE IF NOT EXISTS availability(id INTEGER PRIMARY KEY, doctor_id INTEGE
   start TEXT NOT NULL, end TEXT NOT NULL, slot_minutes INTEGER NOT NULL DEFAULT 20);
 CREATE TABLE IF NOT EXISTS appointments(id INTEGER PRIMARY KEY, doctor_id INTEGER NOT NULL REFERENCES doctors(user_id), patient_id INTEGER NOT NULL REFERENCES patients(user_id),
   start_ts TEXT NOT NULL, end_ts TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'booked' CHECK(status IN ('booked','cancelled','completed')),
-  reason TEXT DEFAULT '', note TEXT, note_ts TEXT);
+  reason TEXT DEFAULT '', note TEXT, note_ts TEXT,
+  reschedule_count INTEGER NOT NULL DEFAULT 0, rescheduled_from TEXT, rescheduled_by TEXT, reschedule_reason TEXT);
+-- every time an appointment is moved (by the patient or by the doctor): audit trail and analytics
+CREATE TABLE IF NOT EXISTS appointment_changes(id INTEGER PRIMARY KEY, appt_id INTEGER NOT NULL REFERENCES appointments(id), old_start TEXT NOT NULL, new_start TEXT NOT NULL,
+  by_role TEXT NOT NULL, by_id INTEGER NOT NULL, reason TEXT DEFAULT '', created TEXT NOT NULL);
 -- a doctor's slot can be held by only one live booking, and a patient cannot hold two at the same time
 CREATE UNIQUE INDEX IF NOT EXISTS ux_doctor_slot ON appointments(doctor_id, start_ts) WHERE status <> 'cancelled';
 CREATE UNIQUE INDEX IF NOT EXISTS ux_patient_slot ON appointments(patient_id, start_ts) WHERE status <> 'cancelled';
 CREATE TABLE IF NOT EXISTS email_log(id INTEGER PRIMARY KEY, to_addr TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
   status TEXT NOT NULL, error TEXT DEFAULT '', created TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS scans(id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL REFERENCES patients(user_id), created TEXT NOT NULL, report_json TEXT NOT NULL);
+-- face photos of a scan (original + annotated), stored once by content hash. Only the patient and doctors the patient has had may read them; admins never can.
+CREATE TABLE IF NOT EXISTS scan_photos(scan_id INTEGER NOT NULL REFERENCES scans(id), view TEXT NOT NULL, kind TEXT NOT NULL, sha TEXT NOT NULL, PRIMARY KEY(scan_id, view, kind));
 """
 
 
@@ -47,8 +55,10 @@ def connect():
 
 def init_db():
     c = connect(); c.executescript(SCHEMA)
-    try: c.execute("ALTER TABLE patients ADD COLUMN email_reminders INTEGER NOT NULL DEFAULT 1")      # upgrade an older database
-    except sqlite3.OperationalError: pass
+    for ddl in ("ALTER TABLE patients ADD COLUMN email_reminders INTEGER NOT NULL DEFAULT 1", "ALTER TABLE appointments ADD COLUMN reschedule_count INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE appointments ADD COLUMN rescheduled_from TEXT", "ALTER TABLE appointments ADD COLUMN rescheduled_by TEXT", "ALTER TABLE appointments ADD COLUMN reschedule_reason TEXT"):
+        try: c.execute(ddl)                                                                       # upgrade an older database
+        except sqlite3.OperationalError: pass
     c.commit(); c.close()
 
 
@@ -75,23 +85,25 @@ def check_pw(pw, stored):
     except Exception: return False
 
 
-def make_token(uid):
-    body = f"{uid}.{int(time.time()) + SESSION_SECONDS}"; return base64.urlsafe_b64encode(body.encode()).decode() + "." + hmac.new(_secret(), body.encode(), "sha256").hexdigest()
+def make_token(uid, via=None):
+    life = VIEW_AS_SECONDS if via else SESSION_SECONDS; body = f"{uid}.{int(time.time()) + life}" + (f".{via}" if via else "")
+    return base64.urlsafe_b64encode(body.encode()).decode() + "." + hmac.new(_secret(), body.encode(), "sha256").hexdigest()
 
 
 def read_token(tok):
+    """Returns (user_id, via_admin_id or None), or (None, None) if the token is invalid or expired."""
     try:
         b64, sig = tok.split("."); body = base64.urlsafe_b64decode(b64).decode()
-        if not hmac.compare_digest(hmac.new(_secret(), body.encode(), "sha256").hexdigest(), sig): return None
-        uid, exp = body.split("."); return int(uid) if int(exp) > time.time() else None
-    except Exception: return None
+        if not hmac.compare_digest(hmac.new(_secret(), body.encode(), "sha256").hexdigest(), sig): return None, None
+        parts = body.split("."); return (int(parts[0]), int(parts[2]) if len(parts) > 2 else None) if int(parts[1]) > time.time() else (None, None)
+    except Exception: return None, None
 
 
 def current_user(request: Request, db=Depends(get_db)):
-    uid = read_token(request.cookies.get("session", ""))
+    uid, via = read_token(request.cookies.get("session", ""))
     u = db.execute("SELECT id, role, name, email FROM users WHERE id=?", (uid,)).fetchone() if uid else None
     if not u: raise HTTPException(401, "Please log in")
-    return dict(u)
+    return {**dict(u), "via": via}
 
 
 def need(role):
@@ -115,6 +127,23 @@ def _slots_for(db, doctor_id, day):
 
 
 app = FastAPI(title="Face wellness platform")
+
+
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """Front-end files are re-checked on every load, so an update is never hidden by a stale browser cache."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/": resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.middleware("http")
+async def read_only_when_viewing_as(request: Request, call_next):
+    """While an admin is viewing as another user nothing can be changed: every non-GET call is refused except leaving that view or signing out."""
+    tok = request.cookies.get("session")
+    if tok and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path not in ("/api/view-as/exit", "/api/logout"):
+        if read_token(tok)[1]: return JSONResponse({"detail": "Read-only: you are viewing as another user. Return to your admin view to make changes."}, status_code=403)
+    return await call_next(request)
 
 
 class Login(BaseModel): email: str; password: str
@@ -143,6 +172,18 @@ def login(b: Login, response: Response, db=Depends(get_db)):
 def logout(response: Response): response.delete_cookie("session"); return {"ok": True}
 
 
+class PwChange(BaseModel): current: str; new: str
+
+
+@app.put("/api/me/password")
+def change_password(b: PwChange, u=Depends(current_user), db=Depends(get_db)):
+    row = db.execute("SELECT pw_hash FROM users WHERE id=?", (u["id"],)).fetchone()
+    if not check_pw(b.current, row["pw_hash"]): raise HTTPException(403, "Your current password is wrong")
+    if len(b.new) < 8: raise HTTPException(422, "The new password must be at least 8 characters")
+    if b.new == b.current: raise HTTPException(422, "The new password must be different from the current one")
+    db.execute("UPDATE users SET pw_hash=? WHERE id=?", (hash_pw(b.new), u["id"])); db.commit(); return {"ok": True}
+
+
 @app.post("/api/register")
 def register(b: Register, response: Response, db=Depends(get_db)):
     if len(b.password) < 8: raise HTTPException(422, "Password must be at least 8 characters")
@@ -162,6 +203,9 @@ def me(u=Depends(current_user), db=Depends(get_db)):
         # order on first login: intake form -> first face scan -> choose a doctor (recommended from the scan)
         u["onboarding"] = {"needs_intake": p["intake_json"] is None, "needs_scan": scans == 0, "needs_doctor": p["doctor_id"] is None, "doctor_id": p["doctor_id"]}
         pr = insights.progress(_scan_rows(db, u["id"])); u["scan_status"] = {"status": pr["status"], "due": pr["due"], "days_since": pr["days_since"], "next_due": pr["next_due"]}
+    u["created"] = db.execute("SELECT created FROM users WHERE id=?", (u["id"],)).fetchone()["created"]
+    via = u.pop("via", None); adm = db.execute("SELECT id, name FROM users WHERE id=?", (via,)).fetchone() if via else None
+    u["viewing_as"] = {"admin_id": adm["id"], "admin_name": adm["name"]} if adm else None
     return u
 
 
@@ -284,29 +328,74 @@ def finalize_report(rep, intake, counts, area):
     return rep
 
 
+def _jpeg(img, max_side, quality):
+    import cv2
+    h, w = img.shape[:2]; k = max_side / max(h, w)
+    if k < 1: img = cv2.resize(img, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
+    return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
+
+
+def save_photo(db, scan_id, view, kind, data):
+    """Stores one JPEG by content hash (identical photos are kept once) with owner-only file permissions; access is only through scan_photo() below."""
+    sha = hashlib.sha256(data).hexdigest(); d = os.path.join(PHOTO_DIR, sha[:2]); os.makedirs(d, mode=0o700, exist_ok=True); p = os.path.join(d, sha + ".jpg")
+    if not os.path.exists(p):
+        with open(p, "wb") as fh: fh.write(data)
+        os.chmod(p, 0o600)
+    db.execute("INSERT OR REPLACE INTO scan_photos(scan_id, view, kind, sha) VALUES(?,?,?,?)", (scan_id, view, kind, sha))
+
+
+def photo_views(db, scan_ids):
+    """{scan_id: [views with stored photos]} for a list of scans."""
+    out = {i: [] for i in scan_ids}
+    if scan_ids:
+        for r in db.execute(f"SELECT scan_id, view FROM scan_photos WHERE kind='original' AND scan_id IN ({','.join('?' * len(scan_ids))}) ORDER BY view", list(scan_ids)): out[r["scan_id"]].append(r["view"])
+    return out
+
+
+def run_scan(images, intake):
+    """images: {view: BGR image}. Returns (report, parts) where parts = [{view, spots, preview, original}]. Raises 422 if a photo has no usable face."""
+    import scan as scanner
+    counts, area, parts = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, []
+    for name, img in images.items():
+        s_ = scanner.scan_image(img, None if name == "front" else name)
+        if s_["status"] != "ok": raise HTTPException(422, f"{name} photo: {s_['message']}")
+        for z in insights.ZONES: counts[z] += s_["zone_counts"][z]; area[z] += s_["zone_area"][z]
+        parts.append({"view": name, "spots": s_["total_spots"], "preview": s_["preview"], "original": img})
+    rep = insights.analyse_zones(counts, intake, area); rep["views"] = list(images); rep["zone_area"] = area; finalize_report(rep, intake, counts, area)
+    return rep, parts
+
+
 @app.post("/api/patient/scan")
 def scan(b: ScanReq, u=Depends(need("patient")), db=Depends(get_db)):
-    """Front photo (required) plus optional left/right profile photos. Photos are analysed in memory and NOT stored; only zone counts and the report are kept."""
-    import cv2, scan as scanner
+    """Front photo (required) plus left/right profile photos (all three on the first scan). The photos are kept, visible only to the patient and doctors the patient has had."""
     views = {k: v for k, v in (("front", b.front), ("left", b.left), ("right", b.right)) if v}
     if "front" not in views: raise HTTPException(422, "A front photo is required")
     first = db.execute("SELECT COUNT(*) FROM scans WHERE patient_id=?", (u["id"],)).fetchone()[0] == 0
     if first and len(views) < 3: raise HTTPException(422, "Your first scan needs all three angles: front, left side and right side")
-    counts, area, previews = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, []
-    for name, data in views.items():
-        s = scanner.scan_image(_decode_image(data), None if name == "front" else name)
-        if s["status"] != "ok": raise HTTPException(422, f"{name} photo: {s['message']}")
-        for z in insights.ZONES: counts[z] += s["zone_counts"][z]; area[z] += s["zone_area"][z]
-        ok, jpg = cv2.imencode(".jpg", s["preview"], [cv2.IMWRITE_JPEG_QUALITY, 80]); previews.append({"view": name, "spots": s["total_spots"], "image": "data:image/jpeg;base64," + base64.b64encode(jpg).decode()})
-    rep = insights.analyse_zones(counts, _intake(db, u["id"]), area); rep["views"] = list(views); rep["zone_area"] = area
-    finalize_report(rep, _intake(db, u["id"]), counts, area)
-    db.execute("INSERT INTO scans(patient_id, created, report_json) VALUES(?,?,?)", (u["id"], datetime.now().isoformat(timespec="seconds"), json.dumps(rep))); db.commit()
-    return {"report": rep, "previews": previews}
+    rep, parts = run_scan({k: _decode_image(v) for k, v in views.items()}, _intake(db, u["id"]))
+    cur = db.execute("INSERT INTO scans(patient_id, created, report_json) VALUES(?,?,?)", (u["id"], datetime.now().isoformat(timespec="seconds"), json.dumps(rep))); sid = cur.lastrowid
+    previews = []
+    for p in parts:
+        ann = _jpeg(p["preview"], 1000, 80); save_photo(db, sid, p["view"], "original", _jpeg(p["original"], 1400, 85)); save_photo(db, sid, p["view"], "annotated", ann)
+        previews.append({"view": p["view"], "spots": p["spots"], "image": "data:image/jpeg;base64," + base64.b64encode(ann).decode()})
+    db.commit(); return {"scan_id": sid, "report": rep, "previews": previews}
+
+
+@app.get("/api/scans/{sid}/photo/{view}/{kind}")
+def scan_photo(sid: int, view: str, kind: str, u=Depends(current_user), db=Depends(get_db)):
+    """A stored face photo. Allowed for the patient who took it and for every doctor that patient has had. Never for admins, including an admin viewing as someone else."""
+    if u.get("via") or u["role"] == "admin": raise HTTPException(403, "Face photos are private to the patient and their doctors")
+    row = db.execute("SELECT s.patient_id, ph.sha FROM scans s JOIN scan_photos ph ON ph.scan_id=s.id WHERE s.id=? AND ph.view=? AND ph.kind=?", (sid, view, kind)).fetchone()
+    if not row: raise HTTPException(404, "Not found")
+    ok = (u["role"] == "patient" and u["id"] == row["patient_id"]) or (u["role"] == "doctor" and db.execute("SELECT 1 FROM patient_doctors WHERE patient_id=? AND doctor_id=?", (row["patient_id"], u["id"])).fetchone())
+    if not ok: raise HTTPException(404, "Not found")
+    return FileResponse(os.path.join(PHOTO_DIR, row["sha"][:2], row["sha"] + ".jpg"), media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/patient/scans")
 def my_scans(u=Depends(need("patient")), db=Depends(get_db)):
-    return [{"id": r["id"], "created": r["created"], "report": json.loads(r["report_json"])} for r in db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (u["id"],))]
+    rows = db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (u["id"],)).fetchall(); pv = photo_views(db, [r["id"] for r in rows])
+    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "report": json.loads(r["report_json"])} for r in rows]
 
 
 @app.get("/api/patient/progress")
@@ -357,13 +446,74 @@ def _email_in_background(to, patient, doctor, when, key):
     finally: c.close()
 
 
-def _appt_rows(rows): return [dict(r) for r in rows]
+def _appt_rows(rows):
+    """Rows as dicts. Adds display_status: a booked appointment whose time has passed without being completed is shown as 'missed'."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M"); out = []
+    for r in rows:
+        d = dict(r)
+        if "status" in d and d.get("end_ts"): d["display_status"] = "missed" if d["status"] == "booked" and d["end_ts"] < now else d["status"]
+        out.append(d)
+    return out
+
+
+RS = "a.reschedule_count, a.rescheduled_from, a.rescheduled_by, a.reschedule_reason"
 
 
 @app.get("/api/patient/appointments")
 def my_appointments(u=Depends(need("patient")), db=Depends(get_db)):
-    return _appt_rows(db.execute("SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, a.note_ts, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id "
+    return _appt_rows(db.execute(f"SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, a.note_ts, {RS}, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id "
                                  "WHERE a.patient_id=? ORDER BY a.start_ts DESC", (u["id"],)))
+
+
+class Resched(BaseModel): start: str; reason: str = ""
+
+
+def _own_appointment(db, aid, u):
+    a = db.execute("SELECT a.*, pu.name AS patient_name, pu.email AS patient_email, du.name AS doctor_name, du.email AS doctor_email FROM appointments a "
+                   "JOIN users pu ON pu.id=a.patient_id JOIN users du ON du.id=a.doctor_id WHERE a.id=?", (aid,)).fetchone()
+    mine = a and not u.get("via") and ((u["role"] == "patient" and a["patient_id"] == u["id"]) or (u["role"] == "doctor" and a["doctor_id"] == u["id"]))
+    if not mine: raise HTTPException(404, "Not found")
+    return a
+
+
+@app.get("/api/appointments/{aid}/slots")
+def appointment_slots(aid: int, days: int = 28, u=Depends(current_user), db=Depends(get_db)):
+    """Free slots of this appointment's doctor, for choosing a new time (patient or doctor of the appointment)."""
+    a = _own_appointment(db, aid, u); out, today = {}, datetime.now().date()
+    for i in range(min(days, BOOKING_WINDOW_DAYS) + 1):
+        day = today + timedelta(days=i); sl = [t.strftime("%H:%M") for t, _ in _slots_for(db, a["doctor_id"], day)]
+        if sl: out[f"{day:%Y-%m-%d}"] = sl
+    return out
+
+
+@app.post("/api/appointments/{aid}/reschedule")
+def reschedule(aid: int, b: Resched, bg: BackgroundTasks, u=Depends(current_user), db=Depends(get_db)):
+    """Moves an upcoming booked appointment to another free slot of the same doctor. The patient can do it, and so can the doctor (for example when suddenly unavailable); the other side is emailed."""
+    a = _own_appointment(db, aid, u); now = datetime.now()
+    if a["status"] != "booked" or a["end_ts"] < now.strftime("%Y-%m-%d %H:%M"): raise HTTPException(409, "Only an upcoming booked appointment can be rescheduled")
+    try: t = datetime.strptime(b.start, "%Y-%m-%d %H:%M")
+    except ValueError: raise HTTPException(422, "start must look like 2026-11-02 10:20")
+    if b.start == a["start_ts"]: raise HTTPException(409, "That is the current time")
+    ok = [(s_, e) for s_, e in _slots_for(db, a["doctor_id"], t.date()) if s_ == t]
+    if not ok or t > now + timedelta(days=BOOKING_WINDOW_DAYS): raise HTTPException(409, "That time is not available")
+    reason = b.reason.strip()[:200]
+    try:
+        db.execute("UPDATE appointments SET start_ts=?, end_ts=?, reschedule_count=reschedule_count+1, rescheduled_from=?, rescheduled_by=?, reschedule_reason=? WHERE id=?",
+                   (b.start, ok[0][1].strftime("%Y-%m-%d %H:%M"), a["start_ts"], u["role"], reason, aid))
+        db.execute("INSERT INTO appointment_changes(appt_id, old_start, new_start, by_role, by_id, reason, created) VALUES(?,?,?,?,?,?,?)", (aid, a["start_ts"], b.start, u["role"], u["id"], reason, now.isoformat(timespec="seconds")))
+        db.commit()
+    except sqlite3.IntegrityError: db.rollback(); raise HTTPException(409, "That slot was just taken, or the patient already has an appointment at that time")
+    fmt = lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M").strftime("%a %d %b, %I:%M %p")
+    bg.add_task(_resched_emails, a["patient_email"], a["patient_name"], a["doctor_email"], a["doctor_name"], fmt(a["start_ts"]), fmt(b.start), u["role"], reason, aid)
+    return {"id": aid, "start": b.start, "end": ok[0][1].strftime("%Y-%m-%d %H:%M"), "rescheduled_by": u["role"]}
+
+
+def _resched_emails(p_email, p_name, d_email, d_name, old, new, by, reason, aid):
+    c = connect()
+    try:
+        subj, body = mailer.appointment_rescheduled(p_name, d_name, old, new, by, reason if by == "doctor" else ""); mailer.send_email(c, p_email, subj, body, "appt_resched", f"appt-resched:{aid}:{new}:patient")
+        if by == "patient": subj, body = mailer.appointment_rescheduled_for_doctor(d_name, p_name, old, new); mailer.send_email(c, d_email, subj, body, "appt_resched_doctor", f"appt-resched:{aid}:{new}:doctor")
+    finally: c.close()
 
 
 @app.delete("/api/appointments/{aid}")
@@ -385,12 +535,17 @@ def doctor_summary(u=Depends(need("doctor")), db=Depends(get_db)):
         pats.append({"id": p["id"], "name": p["name"], "email": p["email"], "intake": json.loads(p["intake_json"]) if p["intake_json"] else None,
                      "last_scan": {"created": scan["created"], "summary": rep["summary"], "suggest_appointment": rep["suggest_appointment"]} if scan else None,
                      "next_appointment": nxt["start_ts"] if nxt else None})
-    q = "SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, pu.name AS patient, a.patient_id FROM appointments a JOIN users pu ON pu.id=a.patient_id WHERE a.doctor_id=? AND "
+    q = f"SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, {RS}, pu.name AS patient, a.patient_id FROM appointments a JOIN users pu ON pu.id=a.patient_id WHERE a.doctor_id=? AND "
     former = _appt_rows(db.execute("SELECT u.id, u.name, MAX(pd.end_ts) AS left_on FROM patient_doctors pd JOIN users u ON u.id=pd.patient_id JOIN patients p ON p.user_id=pd.patient_id "
                                    "WHERE pd.doctor_id=? AND (p.doctor_id IS NULL OR p.doctor_id<>?) GROUP BY u.id ORDER BY u.name", (u["id"], u["id"])))      # read-only: moved to another doctor
     return {"patients": pats, "former_patients": former,
             "upcoming": _appt_rows(db.execute(q + "a.status='booked' AND a.start_ts>=? ORDER BY a.start_ts", (u["id"], now))),
             "previous": _appt_rows(db.execute(q + "(a.status='completed' OR (a.status='booked' AND a.start_ts<?)) ORDER BY a.start_ts DESC", (u["id"], now)))}
+
+
+def _scans_with_photos(db, pid):
+    rows = db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (pid,)).fetchall(); pv = photo_views(db, [r["id"] for r in rows])
+    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "report": json.loads(r["report_json"])} for r in rows]
 
 
 @app.get("/api/doctor/patients/{pid}")
@@ -400,9 +555,9 @@ def doctor_patient(pid: int, u=Depends(need("doctor")), db=Depends(get_db)):
                    "WHERE p.user_id=? AND EXISTS(SELECT 1 FROM patient_doctors pd WHERE pd.patient_id=p.user_id AND pd.doctor_id=?)", (pid, u["id"])).fetchone()
     if not p: raise HTTPException(404, "Not your patient")
     return {**dict(p), "is_current_doctor": p["current_doctor_id"] == u["id"], "intake": _intake(db, pid), "progress": insights.progress(_scan_rows(db, pid)),
-            "scans": [{"created": r["created"], "report": json.loads(r["report_json"])} for r in db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (pid,))],
+            "scans": _scans_with_photos(db, pid),
             "assignments": _appt_rows(db.execute("SELECT du.name AS doctor, pd.start_ts, pd.end_ts, pd.reason FROM patient_doctors pd JOIN users du ON du.id=pd.doctor_id WHERE pd.patient_id=? ORDER BY pd.id", (pid,))),
-            "appointments": _appt_rows(db.execute("SELECT a.id, a.start_ts, a.status, a.reason, a.note, a.note_ts, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id "
+            "appointments": _appt_rows(db.execute(f"SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, a.note_ts, {RS}, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id "
                                                   "WHERE a.patient_id=? AND a.status<>'cancelled' ORDER BY a.start_ts DESC", (pid,)))}
 
 
@@ -450,9 +605,105 @@ def admin_doctor_patients(did: int, u=Depends(need("admin")), db=Depends(get_db)
 def admin_patient(pid: int, u=Depends(need("admin")), db=Depends(get_db)):
     p = db.execute("SELECT u.id, u.name, u.email, p.doctor_id AS current_doctor_id FROM patients p JOIN users u ON u.id=p.user_id WHERE p.user_id=?", (pid,)).fetchone()
     if not p: raise HTTPException(404, "No such patient")
-    return {**dict(p), "intake": _intake(db, pid), "progress": insights.progress(_scan_rows(db, pid)), "scans": [{"created": r["created"], "report": json.loads(r["report_json"])} for r in db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (pid,))],
+    last = db.execute("SELECT created FROM scans WHERE patient_id=? ORDER BY id DESC LIMIT 1", (pid,)).fetchone(); n = db.execute("SELECT COUNT(*) FROM scans WHERE patient_id=?", (pid,)).fetchone()[0]
+    # face scans (photos AND results) are private to the patient and their doctors: the admin only sees how many exist
+    return {**dict(p), "intake": _intake(db, pid), "scan_summary": {"count": n, "last": last["created"] if last else None, "private": True},
             "assignments": _appt_rows(db.execute("SELECT du.name AS doctor, pd.start_ts, pd.end_ts, pd.reason FROM patient_doctors pd JOIN users du ON du.id=pd.doctor_id WHERE pd.patient_id=? ORDER BY pd.id", (pid,))),
-            "appointments": _appt_rows(db.execute("SELECT a.id, a.start_ts, a.status, a.reason, a.note, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id WHERE a.patient_id=? ORDER BY a.start_ts DESC", (pid,)))}
+            "appointments": _appt_rows(db.execute(f"SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.note, {RS}, du.name AS doctor FROM appointments a JOIN users du ON du.id=a.doctor_id WHERE a.patient_id=? ORDER BY a.start_ts DESC", (pid,)))}
+
+
+def admin_or_previewing_admin(u=Depends(current_user), db=Depends(get_db)):
+    """The admin, or an admin who is currently previewing someone else's screens (so they can jump straight to another preview)."""
+    if u["role"] == "admin" or (u.get("via") and db.execute("SELECT 1 FROM users WHERE id=? AND role='admin'", (u["via"],)).fetchone()): return u
+    raise HTTPException(403, "admin access only")
+
+
+@app.get("/api/admin/users")
+def admin_users(role: str = "doctor", u=Depends(admin_or_previewing_admin), db=Depends(get_db)):
+    """Doctors or patients the admin can view the interface as (read-only)."""
+    if role not in ("doctor", "patient"): raise HTTPException(422, "role must be doctor or patient")
+    if role == "doctor": q = "SELECT u.id, u.name, u.email, d.specialization AS detail FROM users u JOIN doctors d ON d.user_id=u.id ORDER BY u.name"
+    else: q = "SELECT u.id, u.name, u.email, COALESCE(du.name, 'no doctor yet') AS detail FROM users u JOIN patients p ON p.user_id=u.id LEFT JOIN users du ON du.id=p.doctor_id ORDER BY u.name"
+    return _appt_rows(db.execute(q))
+
+
+class ViewAs(BaseModel): user_id: int
+
+
+@app.post("/api/admin/view-as")
+def view_as(b: ViewAs, response: Response, u=Depends(need("admin")), db=Depends(get_db)):
+    t = db.execute("SELECT id, role, name FROM users WHERE id=? AND role IN ('doctor','patient')", (b.user_id,)).fetchone()
+    if not t: raise HTTPException(404, "No such doctor or patient")
+    response.set_cookie("session", make_token(t["id"], via=u["id"]), httponly=True, samesite="lax", max_age=VIEW_AS_SECONDS); return {"role": t["role"], "name": t["name"]}
+
+
+@app.post("/api/view-as/exit")
+def exit_view_as(request: Request, response: Response, db=Depends(get_db)):
+    uid, via = read_token(request.cookies.get("session", ""))
+    adm = db.execute("SELECT id, role FROM users WHERE id=? AND role='admin'", (via,)).fetchone() if via else None
+    if not adm: raise HTTPException(409, "You are not viewing as another user")
+    response.set_cookie("session", make_token(adm["id"]), httponly=True, samesite="lax", max_age=SESSION_SECONDS); return {"role": "admin"}
+
+
+@app.get("/api/admin/analytics")
+def admin_analytics(u=Depends(need("admin")), db=Depends(get_db)):
+    """Platform-wide analytics. Everything is an aggregate: no patient names and no scan results or photos (those stay private to the patient and their doctors)."""
+    now = datetime.now(); nows = now.strftime("%Y-%m-%d %H:%M"); today = now.date(); monday = today - timedelta(days=today.weekday()); WB, WF = 8, 4
+    kind = lambda r: "cancelled" if r["status"] == "cancelled" else "completed" if r["status"] == "completed" else ("missed" if r["end_ts"] < nows else "upcoming")
+    appts = db.execute("SELECT doctor_id, patient_id, start_ts, end_ts, status, reschedule_count FROM appointments").fetchall(); K = ("completed", "upcoming", "missed", "cancelled")
+    tot = {k: 0 for k in K}; weekly = [{"week": (monday + timedelta(days=7 * w)).isoformat(), **{k: 0 for k in K}} for w in range(-WB, WF)]; wd = [0] * 7
+    per = {r["id"]: {"id": r["id"], "name": r["name"], "specialization": r["specialization"], "patients": 0, **{k: 0 for k in K}, "rescheduled": 0, "capacity": 0, "booked": 0}
+           for r in db.execute("SELECT u.id, u.name, d.specialization FROM doctors d JOIN users u ON u.id=d.user_id")}
+    lo, hi = (monday - timedelta(days=7 * WB)).isoformat(), (monday + timedelta(days=7 * WF)).isoformat()
+    for r in appts:
+        k = kind(r); tot[k] += 1; d = per.get(r["doctor_id"])
+        if d is not None: d[k] += 1; d["rescheduled"] += 1 if r["reschedule_count"] else 0
+        day = r["start_ts"][:10]
+        if lo <= day < hi:
+            weekly[(datetime.strptime(day, "%Y-%m-%d").date() - (monday - timedelta(days=7 * WB))).days // 7][k] += 1
+            if k != "cancelled" and d is not None: d["booked"] += 1
+        if k != "cancelled": wd[datetime.strptime(day, "%Y-%m-%d").weekday()] += 1
+    for did, wins in _chart_slots(db).items():
+        if did in per: per[did]["capacity"] = wins * (WB + WF)
+    for r in db.execute("SELECT doctor_id, COUNT(*) n FROM patients WHERE doctor_id IS NOT NULL GROUP BY doctor_id"):
+        if r["doctor_id"] in per: per[r["doctor_id"]]["patients"] = r["n"]
+    docs = []
+    for d in per.values():
+        att = d["completed"] + d["missed"]; d["attendance_rate"] = round(d["completed"] / att, 3) if att else None; d["utilisation"] = round(min(1.0, d["booked"] / d["capacity"]), 3) if d["capacity"] else None
+        docs.append({k: v for k, v in d.items() if k not in ("capacity", "booked")})
+    # recovery from scan trends: mean of the first vs the last few scans (aggregate only, never individual results)
+    rec = {"improved": 0, "stable": 0, "worsened": 0, "insufficient": 0}; by_doc = {did: {"improved": 0, "stable": 0, "worsened": 0} for did in per}; edges = [-40, -15, 15, 40]; hist = [0] * 5
+    cur = {r["user_id"]: r["doctor_id"] for r in db.execute("SELECT user_id, doctor_id FROM patients")}; series = {}
+    for r in db.execute("SELECT patient_id, report_json FROM scans ORDER BY created"): series.setdefault(r["patient_id"], []).append(json.loads(r["report_json"]).get("total_spots", 0))
+    scan_state = {"scanned_last_7_days": 0, "due": 0, "overdue": 0, "never": 0}; last = {r["patient_id"]: r["m"] for r in db.execute("SELECT patient_id, MAX(created) m FROM scans GROUP BY patient_id")}
+    for pid in cur:
+        T = series.get(pid, [])
+        if last.get(pid) is None: scan_state["never"] += 1
+        else:
+            days = (now - datetime.fromisoformat(last[pid])).days; scan_state["scanned_last_7_days" if days < 7 else "due" if days < 10 else "overdue"] += 1
+        if len(T) < 2: rec["insufficient"] += 1; continue
+        m = max(1, min(3, len(T) // 2)); a0, a1 = sum(T[:m]) / m, sum(T[-m:]) / m; ch = 100 * (a1 - a0) / a0 if a0 else 0
+        cls = "improved" if ch <= -15 else "worsened" if ch >= 15 else "stable"; rec[cls] += 1
+        if cur[pid] in by_doc: by_doc[cur[pid]][cls] += 1
+        hist[sum(1 for e in edges if ch > e)] += 1
+    scored = rec["improved"] + rec["stable"] + rec["worsened"]; reasons = {}
+    for r in db.execute("SELECT by_role, reason FROM appointment_changes"):
+        if r["reason"]: reasons[(r["by_role"], r["reason"].strip().lower())] = reasons.get((r["by_role"], r["reason"].strip().lower()), 0) + 1
+    chg = {r["by_role"]: r["n"] for r in db.execute("SELECT by_role, COUNT(*) n FROM appointment_changes GROUP BY by_role")}
+    att = tot["completed"] + tot["missed"]
+    return {"totals": {"doctors": len(per), "patients": len(cur), "scans": sum(len(v) for v in series.values()), "appointments": sum(tot.values())},
+            "appointments": {**tot, "rescheduled": sum(chg.values()), "attendance_rate": round(tot["completed"] / att, 3) if att else None}, "weekly": weekly, "by_weekday": wd,
+            "doctors": sorted(docs, key=lambda d: d["name"]), "recovery": {**rec, "rate": round(rec["improved"] / scored, 3) if scored else None, "histogram": {"edges": edges, "counts": hist},
+            "by_doctor": [{"doctor_id": did, "name": per[did]["name"], **v} for did, v in by_doc.items()]}, "scanning": scan_state,
+            "reschedules": {"by_patient": chg.get("patient", 0), "by_doctor": chg.get("doctor", 0), "top_reasons": [{"by": k[0], "reason": k[1], "count": n} for k, n in sorted(reasons.items(), key=lambda kv: -kv[1])[:6]]}}
+
+
+def _chart_slots(db):
+    """Slots per week in each doctor's availability chart: {doctor_id: slots a week}."""
+    out = {}
+    for r in db.execute("SELECT doctor_id, start, end, slot_minutes FROM availability"):
+        a = datetime.strptime(r["start"], "%H:%M"); b = datetime.strptime(r["end"], "%H:%M"); out[r["doctor_id"]] = out.get(r["doctor_id"], 0) + int((b - a).total_seconds() // 60 // r["slot_minutes"])
+    return out
 
 
 @app.get("/api/admin/emails")
@@ -467,7 +718,7 @@ def admin_run_reminders(u=Depends(need("admin")), db=Depends(get_db)):
 
 @app.get("/api/admin/calendar")
 def admin_calendar(start: str, end: str, u=Depends(need("admin")), db=Depends(get_db)):
-    return _appt_rows(db.execute("SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, du.name AS doctor, a.doctor_id, pu.name AS patient FROM appointments a "
+    return _appt_rows(db.execute(f"SELECT a.id, a.start_ts, a.end_ts, a.status, a.reason, a.reschedule_count, du.name AS doctor, a.doctor_id, pu.name AS patient FROM appointments a "
                                  "JOIN users du ON du.id=a.doctor_id JOIN users pu ON pu.id=a.patient_id WHERE a.start_ts>=? AND a.start_ts<? AND a.status<>'cancelled' ORDER BY a.start_ts", (start, end)))
 
 

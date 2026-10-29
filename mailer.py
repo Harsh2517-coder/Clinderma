@@ -63,3 +63,13 @@ def appointment_reminder(patient, doctor, when):
 def weekly_scan_reminder(patient, days):
     return ("Time for your weekly face scan", f"Hello {patient},\n\nIt has been {days} days since your last face scan. A scan once a week lets you and your doctor see how your skin is changing.\nTake it here: {app_url()}/#/scan\n\n"
                                               "To stop reminder emails, turn them off on your Progress page.\n\nFaceVeda")
+
+
+def appointment_rescheduled(patient, doctor, old, new, by, reason=""):
+    who = "your doctor" if by == "doctor" else "you"
+    return (f"Appointment moved to {new}", f"Hello {patient},\n\nYour appointment with {doctor} was moved by {who}.\nWas: {old}\nNow: {new}\n" + (f"Reason: {reason}\n" if reason else "") +
+            f"\nYou can view or change it here: {app_url()}\n\nFaceVeda")
+
+
+def appointment_rescheduled_for_doctor(doctor, patient, old, new):
+    return (f"{patient} moved an appointment to {new}", f"Hello {doctor},\n\n{patient} moved their appointment.\nWas: {old}\nNow: {new}\n\nSee your schedule: {app_url()}\n\nFaceVeda")

@@ -25,7 +25,7 @@ def run_reminders(db, now=None, send=mailer.send_email):
     for a in db.execute("SELECT a.id, a.start_ts, pu.name AS patient, pu.email, du.name AS doctor FROM appointments a JOIN patients p ON p.user_id=a.patient_id JOIN users pu ON pu.id=a.patient_id "
                         "JOIN users du ON du.id=a.doctor_id WHERE a.status='booked' AND p.email_reminders=1 AND a.start_ts>? AND a.start_ts<=?", (lo, hi)).fetchall():
         when = datetime.strptime(a["start_ts"], "%Y-%m-%d %H:%M").strftime("%a %d %b, %I:%M %p")
-        subj, body = mailer.appointment_reminder(a["patient"], a["doctor"], when); out.append(("appt_reminder", a["email"], send(db, a["email"], subj, body, "appt_reminder", f"appt:{a['id']}")))
+        subj, body = mailer.appointment_reminder(a["patient"], a["doctor"], when); out.append(("appt_reminder", a["email"], send(db, a["email"], subj, body, "appt_reminder", f"appt:{a['id']}:{a['start_ts']}")))
     return out
 
 

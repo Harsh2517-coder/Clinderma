@@ -14,6 +14,7 @@ const ICON = {
   users: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 4a3 3 0 010 6M18 20a5 5 0 00-3-4.5"/>', plus: '<path d="M12 5v14M5 12h14"/>',
   out: '<path d="M10 4H5a1 1 0 00-1 1v14a1 1 0 001 1h5M15 8l4 4-4 4M19 12H9"/>', alert: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/>',
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/>', key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>', eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>', check: '<path d="M5 12l5 5 9-10"/>', cam: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.5"/>',
 };
 const icon = (n, c = '') => `<svg class="icon ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n] || ''}</svg>`;
@@ -37,26 +38,119 @@ const D = ts => new Date(String(ts).replace(' ', 'T'));
 const fmtDT = ts => D(ts).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const fmtDate = ts => D(ts).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const statusBadge = s => `<span class="badge ${s === 'completed' ? 'success' : s === 'cancelled' ? 'neutral' : 'info'}">${esc(s)}</span>`;
+const statusBadge = s => `<span class="badge ${s === 'completed' ? 'success' : s === 'cancelled' ? 'neutral' : s === 'missed' ? 'danger' : 'info'}">${esc(s)}</span>`;
+const upcoming = a => a.status === 'booked' && (a.display_status || a.status) === 'booked';
+const movedBadge = a => a.reschedule_count ? ` <span class="badge accent" title="Was ${esc(fmtDT(a.rescheduled_from))}${a.reschedule_reason ? '. Reason: ' + esc(a.reschedule_reason) : ''}">Moved by ${esc(a.rescheduled_by || '')}${a.reschedule_count > 1 ? ' ×' + a.reschedule_count : ''}</span>` : '';
+const reschedBtn = (a, who) => upcoming(a) ? `<button class="btn btn-secondary btn-sm" data-resched="${a.id}" data-when="${esc(fmtDT(a.start_ts))}" data-who="${esc(who)}">Reschedule</button>` : '';
 const tile = (label, value, note = '', cls = '') => `<div class="tile ${cls}"><div class="tile-label">${esc(label)}</div><div class="tile-value">${value}</div>${note ? `<div class="tile-note">${esc(note)}</div>` : ''}</div>`;
 const alertBox = (kind, html, ic = 'info') => `<div class="alert alert-${kind}" role="${kind === 'error' ? 'alert' : 'note'}">${icon(ic)}<div>${html}</div></div>`;
 const stateBox = (title, text) => `<div class="state"><div class="state-icon">${icon('info')}</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+const infoTip = text => `<span class="info-dot" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`;
+const initials = n => String(n).split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
 const card = (title, body, head = '') => `<section class="card"><div class="card-head"><h2>${esc(title)}</h2>${head}</div>${body}</section>`;
 
 /* ---------------- shell ---------------- */
 const NAV = {
   patient: [['home', 'Home', 'home'], ['scan', 'Face scan', 'scan'], ['progress', 'My progress', 'chart'], ['appointments', 'Appointments', 'cal'], ['doctor', 'My doctor', 'doctor'], ['intake', 'My health form', 'form']],
   doctor: [['home', 'Dashboard', 'home'], ['appointments', 'Appointments', 'cal'], ['availability', 'Availability', 'clock']],
-  admin: [['home', 'Overview', 'home'], ['calendar', 'Master calendar', 'cal'], ['emails', 'Email log', 'mail'], ['add-doctor', 'Add a doctor', 'plus']],
+  admin: [['home', 'Overview', 'home'], ['analytics', 'Analytics', 'chart'], ['calendar', 'Master calendar', 'cal'], ['emails', 'Email log', 'mail'], ['add-doctor', 'Add a doctor', 'plus']],
 };
 function shell(nav, active, inner) {
   const links = nav ? NAV[me.role].map(([k, l, i]) => `<a class="nav-link" href="#/${k}" ${k === active ? 'aria-current="page"' : ''}>${icon(i)}<span class="label">${l}</span></a>`).join('') : '';
   app.innerHTML = `<div class="app-shell ${nav ? '' : 'is-collapsed'}" style="${nav ? '' : 'grid-template-columns:minmax(0,1fr);grid-template-areas:\'top\' \'main\''}">
-    <header class="topbar"><a class="brand" href="#/home"><span class="brand-mark">${markImg()}</span><span>FaceVeda</span></a><span class="topbar-spacer"></span>
-      <span class="role-chip">${esc(me.role)}</span><span>${esc(me.name)}</span><button class="btn btn-ghost btn-sm" style="color:#fff" id="logout">${icon('out', 'sm')} Sign out</button></header>
+    <header class="topbar"><a class="brand" href="#/home"><span class="brand-mark">${markImg()}</span><span>FaceVeda</span></a>${previewChip()}<span class="topbar-spacer"></span>
+      <span class="role-chip">${esc(me.role)}</span>${userMenuHtml()}</header>
     ${nav ? `<nav class="sidebar" aria-label="Main"><div class="nav-section">${me.role === 'patient' ? 'My care' : me.role === 'doctor' ? 'My practice' : 'Administration'}</div>${links}</nav>` : ''}
-    <main class="main" id="main" tabindex="-1">${nav && me.role === 'patient' ? scanBanner() : ''}${inner}</main></div>`;
-  $('#logout').onclick = async () => { await api('/logout', { method: 'POST' }); me = null; location.hash = ''; boot(); };
+    <main class="main" id="main" tabindex="-1">${viewAsBanner()}${nav && me.role === 'patient' ? scanBanner() : ''}${inner}</main></div>`;
+  wireUserMenu();
+}
+const ROLE_LABEL = { admin: 'Platform admin', doctor: 'Doctor', patient: 'Patient' };
+function previewChip() {
+  if (!me.viewing_as) return '';
+  return `<span class="preview-chip" title="You stay signed in as ${esc(me.viewing_as.admin_name)}. The preview is read-only and face photos are hidden.">${icon('eye', 'sm')} Previewing as ${ROLE_LABEL[me.role] || esc(me.role)}: ${esc(me.name)}<button class="preview-exit" type="button" data-um-exit>Exit</button></span>`;
+}
+function userMenuHtml() {
+  const va = me.viewing_as; const mi = (k, ic, t) => `<button class="menu-item" role="menuitem" data-um="${k}">${icon(ic, 'sm')} ${t}</button>`;
+  const switchable = me.role === 'admin' || !!va;      // only an admin can switch view (also while previewing, to jump straight to someone else)
+  return `<div class="menu" id="usermenu"><button class="user-btn" id="umbtn" aria-haspopup="menu" aria-expanded="false"><span class="avatar">${esc(initials(me.name))}</span><span class="label">${esc(me.name)}</span><span aria-hidden="true">▾</span></button>
+    <div class="menu-panel" id="umenu" role="menu" hidden><div class="menu-head"><strong>${esc(me.name)}</strong><div class="small muted">${esc(me.email)}</div><div class="small muted">${esc(ROLE_LABEL[me.role] || me.role)}</div>
+    ${va ? `<div class="small muted" style="margin-top:6px">Previewing: signed in as ${esc(va.admin_name)}</div>` : ''}</div>
+    ${mi('profile', 'user', 'Profile')}${va ? '' : mi('password', 'key', 'Change password')}${switchable ? mi('view', 'eye', 'Switch view') : ''}${va ? mi('exit', 'out', 'Back to admin view') : ''}${mi('logout', 'out', 'Log out')}</div></div>`;
+}
+function viewAsBanner() { return ''; }      // TAP-style: the chip in the top bar replaces a banner
+function wireUserMenu() {
+  const btn = $('#umbtn'), panel = $('#umenu'); if (!btn) return;
+  btn.onclick = e => { e.stopPropagation(); panel.hidden = !panel.hidden; btn.setAttribute('aria-expanded', String(!panel.hidden)); };
+  panel.onclick = e => { const b = e.target.closest('[data-um]'); if (!b) return; panel.hidden = true; userAction(b.dataset.um); };
+  const x = $('[data-um-exit]'); if (x) x.onclick = () => userAction('exit');
+}
+async function userAction(k) {
+  if (k === 'logout') { await api('/logout', { method: 'POST' }); me = null; location.hash = ''; boot(); }
+  else if (k === 'exit') { try { await api('/view-as/exit', { method: 'POST' }); me = await api('/me'); location.hash = '#/home'; route(); } catch (e) { toast(e.message, 'error'); } }
+  else if (k === 'profile') profileModal();
+  else if (k === 'password') passwordModal();
+  else if (k === 'view') viewAsModal();
+}
+async function profileModal() {
+  let extra = '';
+  try {
+    const docs = await api('/doctors');
+    if (me.role === 'doctor') { const d = docs.find(x => x.id === me.id); if (d) extra = `<dt>Specialization</dt><dd>${esc(d.specialization || '-')}</dd><dt>Focus areas</dt><dd>${esc(d.focus.map(f => SYSTEMS[f] || f).join(', ') || 'General')}</dd>`; }
+    else if (me.role === 'patient') { const d = docs.find(x => x.id === me.onboarding.doctor_id); extra = `<dt>Current doctor</dt><dd>${d ? esc(d.name) : 'Not chosen yet'}</dd>`; }
+  } catch { /* profile still works without the extras */ }
+  modal('Profile', `<dl class="kv"><dt>Name</dt><dd>${esc(me.name)}</dd><dt>Email</dt><dd>${esc(me.email)}</dd><dt>Role</dt><dd style="text-transform:capitalize">${esc(me.role === 'admin' ? 'Platform admin' : me.role)}</dd>
+    <dt>Member since</dt><dd>${esc(fmtDate(me.created.replace('T', ' ')))}</dd>${extra}</dl>`, '<button class="btn btn-secondary" data-close>Close</button>');
+}
+function passwordModal() {
+  const m = modal('Change password', `<div class="stack"><div class="field"><label for="pw0">Current password</label><input class="input" id="pw0" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="pw1">New password</label><input class="input" id="pw1" type="password" autocomplete="new-password"><span class="hint">At least 8 characters.</span></div>
+    <div class="field"><label for="pw2">Repeat new password</label><input class="input" id="pw2" type="password" autocomplete="new-password"></div><div id="pwerr"></div></div>`,
+    '<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" id="pwsave">Change password</button>');
+  m.el.querySelector('#pwsave').onclick = async () => {
+    const v = id => m.el.querySelector('#' + id).value, err = t => { m.el.querySelector('#pwerr').innerHTML = alertBox('error', esc(t), 'alert'); };
+    if (v('pw1') !== v('pw2')) return err('The two new passwords do not match.');
+    try { await api('/me/password', { method: 'PUT', body: { current: v('pw0'), new: v('pw1') } }); m.close(); toast('Password changed', 'success'); } catch (e) { err(e.message); }
+  };
+}
+async function viewAsModal() {
+  const cur = me.viewing_as ? { role: me.role, id: me.id } : null;
+  const m = modal('Switch view', `<div class="stack"><p class="muted">See the app exactly as another kind of user would. You stay signed in as yourself: only what is shown changes. The preview is read-only, and face photos stay hidden.</p>
+    <div class="field"><label for="vr">View as</label><select class="select" id="vr"><option value="doctor">Doctor</option><option value="patient">Patient</option></select></div>
+    <div class="field" id="vpf"><label for="vp" id="vpl">Doctor <span class="req">*</span></label><select class="select" id="vp"><option value="">Select a doctor…</option></select><span class="field-error" id="vperr" role="alert"></span></div>
+    <div class="hint" id="vst" role="status" aria-live="polite"></div></div>`, '<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" id="vapply">Switch view</button>');
+  const q = id => m.el.querySelector('#' + id); let rows = [];
+  const load = async () => {
+    const role = q('vr').value; q('vpl').innerHTML = (role === 'doctor' ? 'Doctor' : 'Patient') + ' <span class="req">*</span>'; q('vperr').textContent = ''; q('vst').textContent = 'Loading…';
+    q('vp').innerHTML = `<option value="">Select a ${role}…</option>`;
+    try {
+      rows = await api('/admin/users?role=' + role); q('vst').textContent = rows.length ? '' : `There are no ${role}s yet.`;
+      q('vp').innerHTML += rows.map(r => `<option value="${r.id}">${esc(r.name)} — ${esc(r.detail || r.email)}</option>`).join('');
+      if (cur && cur.role === role) q('vp').value = String(cur.id);
+    } catch (e) { q('vst').textContent = `The list could not be loaded: ${e.message}`; }
+  };
+  q('vr').onchange = load; if (cur) q('vr').value = cur.role; await load();
+  q('vapply').onclick = async () => {
+    if (!q('vp').value) { q('vperr').textContent = `Select a ${q('vr').value}.`; return; }
+    try { if (me.viewing_as) await api('/view-as/exit', { method: 'POST' }); await api('/admin/view-as', { method: 'POST', body: { user_id: +q('vp').value } }); m.close(); me = await api('/me'); location.hash = '#/home'; route(); }
+    catch (er) { q('vperr').textContent = er.message; }
+  };
+}
+async function rescheduleModal(id, when, who) {
+  const m = modal('Reschedule appointment', `<div class="stack"><p class="muted">Currently <strong>${esc(when)}</strong>. ${who === 'doctor' ? 'The patient will be emailed about the new time.' : 'Your doctor will be told about the new time.'}</p>
+    <div class="slot-days" id="rsdays"></div><div class="slot-times" id="rstimes"></div>
+    <div class="field"><label for="rsr">${who === 'doctor' ? 'Reason (the patient will see it)' : 'Reason (optional)'}</label><input class="input" id="rsr" value="${who === 'doctor' ? 'Doctor unavailable' : ''}" maxlength="200"></div><div id="rserr"></div></div>`,
+    '<button class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" id="rsgo" disabled>Reschedule</button>');
+  let slots = {}, day = null, time = null; const q = x => m.el.querySelector(x);
+  const draw = () => { q('#rsdays').innerHTML = Object.keys(slots).map(d => `<button class="slot-btn" data-d="${d}" aria-pressed="${d === day}">${esc(fmtDate(d + ' 00:00'))}</button>`).join('');
+    q('#rstimes').innerHTML = (slots[day] || []).map(t => `<button class="slot-btn" data-t="${t}" aria-pressed="${t === time}">${t}</button>`).join(''); q('#rsgo').disabled = !time; };
+  try { slots = await api(`/appointments/${id}/slots?days=28`); const ks = Object.keys(slots); day = ks[0] || null; if (!ks.length) q('#rsdays').innerHTML = '<p class="muted">No free slots in the next 4 weeks.</p>'; else draw(); }
+  catch (e) { q('#rserr').innerHTML = alertBox('error', esc(e.message), 'alert'); }
+  m.el.addEventListener('click', async e => {
+    const d = e.target.closest('[data-d]'), t = e.target.closest('[data-t]');
+    if (d) { day = d.dataset.d; time = null; draw(); } else if (t) { time = t.dataset.t; draw(); }
+    else if (e.target.closest('#rsgo')) { try { await api(`/appointments/${id}/reschedule`, { method: 'POST', body: { start: `${day} ${time}`, reason: q('#rsr').value } }); m.close(); toast(who === 'doctor' ? 'Rescheduled: the patient has been emailed' : 'Appointment rescheduled', 'success'); route(); } catch (er) { q('#rserr').innerHTML = alertBox('error', esc(er.message), 'alert'); await rsRefresh(); } }
+  });
+  async function rsRefresh() { try { slots = await api(`/appointments/${id}/slots?days=28`); if (!slots[day]) day = Object.keys(slots)[0] || null; time = null; draw(); } catch { /* keep the old list */ } }
 }
 function scanBanner() {
   const st = me.scan_status; if (!st || !st.due) return '';
@@ -86,6 +180,13 @@ function loginView(mode = 'login') {
 function reliabilityHtml(f) {
   const r = f.reliability; if (!r) return '';
   return `<p class="small ${r.low ? '' : 'muted'}">${r.low ? '<span class="badge danger">Low reliability in this zone</span> ' : ''}In our test on expert-labelled photos, the scan found about ${Math.round(r.recall * 100)}% of the lesions in this zone, and ${Math.round(r.precision * 100)}% of the spots it flagged were real.${r.low ? ' Please interpret this zone with extra caution.' : ''}</p>`;
+}
+const PHOTO_VIEWS = [['front', 'Front'], ['left', 'Left side'], ['right', 'Right side']];
+function photoGallery(scanId, views) {
+  if (!views || !views.length) return '<p class="muted small">No photos are stored for this scan.</p>';
+  if (me.viewing_as) return '<p class="muted small">Face photos are hidden in admin view.</p>';
+  return `<div class="photo-gallery">${PHOTO_VIEWS.filter(([k]) => views.includes(k)).map(([k, l]) => `<figure><img loading="lazy" src="/api/scans/${scanId}/photo/${k}/annotated" data-sid="${scanId}" data-view="${k}" data-kind="annotated" alt="${l} photo with zones and spots marked">
+    <figcaption>${l} · <button class="link-btn small" type="button" data-photo-toggle>show original</button></figcaption></figure>`).join('')}</div>`;
 }
 function simulatedHtml(rep) {
   const o = rep.simulated_outlook; if (!o) return '';
@@ -117,7 +218,7 @@ function reportHtml(rep, previews = [], { canBook = false } = {}) {
       <span class="muted small">${f.spots} spots · ${Math.round(f.share * 100)}% of the density</span></h3>
       <div class="trad"><div><b>Traditional Chinese medicine:</b> ${esc(f.tcm)}</div><div><b>Ayurveda:</b> ${esc(f.ayurveda)}</div><div><b>Modern view:</b> ${esc(f.modern)}</div></div>
       <div class="note-box">${esc(f.personal_note)}</div>${reliabilityHtml(f)}${outlookHtml(f)}</article>`).join('');
-  return `<div class="stack">${alertBox('warn', esc(rep.disclaimer), 'alert')}
+  return `<div class="stack">
     <p><strong>${esc(rep.summary)}</strong></p>
     ${rep.suggest_appointment ? alertBox('info', `A doctor review is suggested.${canBook ? ' <a href="#/appointments">Book an appointment</a>' : ''}`) : ''}
     <div class="bars" aria-label="Spot density by zone">${bars}</div>
@@ -175,7 +276,7 @@ function intakeForm(initial, onSaved) {
 /* ---------------- face scan ---------------- */
 function scanPanel(onDone, { canBook = true, requireAll = false } = {}) {
   const html = `<div class="stack"><p class="muted">Use a clear, even-light photo with your whole face visible. ${requireAll ? 'Your first scan needs <strong>all three angles</strong>: front, left side and right side, so every part of your face is covered.' : 'A front photo is required; left and right side photos make the result more accurate.'}
-    Photos are analysed on this device's session and are <strong>not stored</strong>: only the zone counts are kept.</p>
+    Your photos are stored securely and are visible only to you and the doctors you have been under. Administrators cannot see them.</p>
     <div class="photo-slots">${[['front', 'Front (required)'], ['left', requireAll ? 'Left side (required)' : 'Left side (recommended)'], ['right', requireAll ? 'Right side (required)' : 'Right side (recommended)']].map(([k, l]) => `<div class="slot" data-slot="${k}"><strong>${l}</strong><div class="thumb">No photo</div>
       <div class="row"><label class="btn btn-secondary btn-sm">Choose<input type="file" accept="image/*" hidden></label><button class="btn btn-ghost btn-sm" type="button" data-cam="${k}">${icon('cam', 'sm')} Camera</button></div></div>`).join('')}</div>
     <div id="serr"></div><div class="row"><button class="btn btn-primary" id="analyse" disabled>Analyse my face</button><span id="busy" class="scan-busy" hidden><span class="spinner"></span> Analysing, this takes a few seconds...</span></div><div id="sres"></div></div>`;
@@ -285,16 +386,16 @@ async function pHome() {
   return { title: `Hello, ${me.name.split(' ')[0]}`, sub: 'Your face wellness overview', actions: '<a class="btn btn-primary" href="#/scan">New face scan</a><a class="btn btn-secondary" href="#/appointments">Book appointment</a>',
     html: `<div class="grid cols-4">${tile('Your doctor', esc(doc ? doc.name : '-'), doc ? doc.specialization : '', 'sm')}${tile('Next appointment', next ? esc(fmtDT(next.start_ts)) : 'None', next ? 'with ' + next.doctor : 'Book one when you like', 'sm')}${tile('Last scan', last ? esc(fmtDate(last.created)) : 'None', '', 'sm')}${tile('Spots found', last ? last.report.total_spots : '-', last ? 'in your last scan' : '')}</div>
     <div class="stack" style="margin-top:24px">${lastNote ? card('Latest note from your doctor', `<div class="note-box">${esc(lastNote.note)}</div><p class="muted small" style="margin-top:8px">${esc(lastNote.doctor)} · ${esc(fmtDate(lastNote.start_ts))}</p>`) : ''}
-    ${last ? card('Your latest scan', reportHtml(last.report, [], { canBook: true })) : card('No scan yet', stateBox('Take your first scan', 'It takes a minute.'))}</div>` };
+    ${last ? card('Your latest scan', reportHtml(last.report, [], { canBook: true }) + `<hr><h3 style="margin-bottom:12px">Photos from this scan</h3>${photoGallery(last.id, last.photos)}`) : card('No scan yet', stateBox('Take your first scan', 'It takes a minute.'))}</div>` };
 }
 async function pScan() {
   const part = scanPanel(null); const scans = await api('/patient/scans');
-  return { title: 'Face scan', sub: 'Find where spots are concentrated on your face', html: card('New scan', part.html) + (scans.length ? `<div style="margin-top:24px">${card('Past scans', `<table class="table"><thead><tr><th>Date</th><th>Spots</th><th>Summary</th></tr></thead><tbody>${scans.map(s => `<tr><td>${esc(fmtDate(s.created))}</td><td>${s.report.total_spots}</td><td>${esc(s.report.summary)}</td></tr>`).join('')}</tbody></table>`)}</div>` : ''), mount: r => part.mount(r) };
+  return { title: 'Face scan', sub: 'Find where spots are concentrated on your face', html: card('New scan', part.html) + (scans.length ? `<div style="margin-top:24px">${card('Past scans', `<table class="table"><thead><tr><th>Date</th><th>Spots</th><th>Summary</th><th>Photos</th></tr></thead><tbody>${scans.map(s => `<tr><td>${esc(fmtDate(s.created))}</td><td>${s.report.total_spots}</td><td>${esc(s.report.summary)}</td><td>${s.photos.length ? `<button class="btn btn-secondary btn-sm" data-scan-photos="${s.id}" data-views="${s.photos.join(',')}" data-date="${esc(fmtDate(s.created))}">View photos</button>` : '<span class="muted">-</span>'}</td></tr>`).join('')}</tbody></table>`)}</div>` : ''), mount: r => part.mount(r) };
 }
 async function pAppointments() {
   const [slots, appts] = await Promise.all([api('/slots?days=28'), api('/patient/appointments')]); const days = Object.keys(slots);
-  const rows = appts.map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}<div class="cell-sub">${esc(a.doctor)}</div></td><td>${statusBadge(a.status)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '<span class="muted">-</span>'}</td>
-    <td class="actions">${a.status === 'booked' ? `<button class="btn btn-secondary btn-sm" data-cancel="${a.id}">Cancel</button>` : ''}</td></tr>`).join('');
+  const rows = appts.map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}<div class="cell-sub">${esc(a.doctor)}</div></td><td>${statusBadge(a.display_status || a.status)}${movedBadge(a)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '<span class="muted">-</span>'}</td>
+    <td class="actions">${reschedBtn(a, 'patient')} ${upcoming(a) ? `<button class="btn btn-secondary btn-sm" data-cancel="${a.id}">Cancel</button>` : ''}</td></tr>`).join('');
   return { title: 'Appointments', sub: 'Book a free slot with your doctor', html: `<div class="stack">${card('Book a slot', days.length ? `<div class="slot-days" id="days">${days.map((d, i) => `<button class="slot-btn" data-day="${d}" aria-pressed="${i === 0}">${esc(fmtDate(d + ' 00:00'))}</button>`).join('')}</div><div class="slot-times" id="times"></div>
       <div class="field" style="margin-top:16px;max-width:520px"><label for="rs">What would you like to discuss?</label><input class="input" id="rs" placeholder="e.g. spots on my forehead"></div><div class="form-actions" style="justify-content:flex-start"><button class="btn btn-primary" id="book" disabled>Book selected slot</button></div><div id="berr"></div>` : stateBox('No free slots', 'Your doctor has no open slots in the next 4 weeks. Please check back later.'))}
     ${card('Your appointments', appts.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Status</th><th>Reason</th><th>Doctor's notes</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : stateBox('No appointments yet', 'Booked appointments and your doctor\'s notes will appear here.'))}</div>`,
@@ -321,14 +422,21 @@ async function pIntake() {
 }
 
 /* ---------------- doctor / admin shared record view ---------------- */
+function scanSections(p) {
+  if (p.scan_summary) return card('Face scans', `<p>${p.scan_summary.count} scan${p.scan_summary.count === 1 ? '' : 's'}${p.scan_summary.last ? `, the latest on ${esc(fmtDate(p.scan_summary.last))}` : ''}.</p>
+    <div class="alert alert-info">${icon('info')}<div>Face photos and scan results are private to the patient and the doctors they have been under. Administrators cannot view them.</div></div>`);
+  if (!p.scans || !p.scans.length) return card('Face scan', stateBox('No scan yet', ''));
+  const photos = p.scans.map((s, i) => `<details class="outlook" style="margin-bottom:10px" ${i === 0 ? 'open' : ''}><summary><strong>${esc(fmtDate(s.created))}</strong> · ${s.report.total_spots} spots · ${s.photos.length} photo${s.photos.length === 1 ? '' : 's'}</summary><div style="margin-top:12px">${photoGallery(s.id, s.photos)}</div></details>`).join('');
+  return card(`Latest face scan · ${fmtDate(p.scans[0].created)}`, reportHtml(p.scans[0].report)) + card('Face photos (every scan, newest first)', photos);
+}
 function recordHtml(p, { canNote = false } = {}) {
   const it = p.intake, L = (it && it.lifestyle) || {}; const conds = it ? (it.conditions || []).map(k => SYSTEMS[k] || k) : [];
   const kv = it ? `<dl class="kv"><dt>Height / weight</dt><dd>${it.height_cm || '-'} cm / ${it.weight_kg || '-'} kg ${it.bmi ? `(BMI ${it.bmi})` : ''}</dd><dt>Age / sex</dt><dd>${it.age || '-'} / ${esc(it.sex || '-')}</dd>
     <dt>Reported issues</dt><dd>${conds.length ? conds.map(esc).join(', ') : 'None reported'}</dd>${it.condition_notes ? `<dt>Details</dt><dd>${esc(it.condition_notes)}</dd>` : ''}<dt>Medicines</dt><dd>${esc(it.medications || '-')}</dd><dt>Allergies</dt><dd>${esc(it.allergies || '-')}</dd>
     <dt>Family history</dt><dd>${esc(it.family_history || '-')}</dd><dt>Lifestyle</dt><dd>${esc(Object.entries(L).filter(([, x]) => x !== '' && x !== null).map(([k, x]) => `${k.replace('_', ' ')}: ${x}`).join(' · ') || '-')}</dd></dl>` : stateBox('No health form yet', 'The patient has not filled it in.');
-  const appts = (p.appointments || []).map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}<div class="cell-sub">${esc(a.doctor || '')}</div></td><td>${statusBadge(a.status)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '<span class="muted">-</span>'}</td>
-    <td class="actions">${canNote && a.doctor === me.name && a.status !== 'cancelled' ? `<button class="btn btn-secondary btn-sm" data-note="${a.id}" data-text="${esc(a.note || '')}">${a.note ? 'Edit note' : 'Add note'}</button>` : ''}</td></tr>`).join('');
-  return `<div class="stack">${p.progress && p.progress.n ? card('Scan progress', progressHtml(p.progress)) : ''}${card('Health form', kv)}${p.scans && p.scans.length ? card(`Latest face scan · ${fmtDate(p.scans[0].created)}`, reportHtml(p.scans[0].report)) : card('Face scan', stateBox('No scan yet', ''))}
+  const appts = (p.appointments || []).map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}<div class="cell-sub">${esc(a.doctor || '')}</div></td><td>${statusBadge(a.display_status || a.status)}${movedBadge(a)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '<span class="muted">-</span>'}</td>
+    <td class="actions">${canNote && a.doctor === me.name ? reschedBtn(a, 'doctor') : ''} ${canNote && a.doctor === me.name && a.status !== 'cancelled' ? `<button class="btn btn-secondary btn-sm" data-note="${a.id}" data-text="${esc(a.note || '')}">${a.note ? 'Edit note' : 'Add note'}</button>` : ''}</td></tr>`).join('');
+  return `<div class="stack">${p.progress && p.progress.n ? card('Scan progress', progressHtml(p.progress)) : ''}${card('Health form', kv)}${scanSections(p)}
     ${card('Doctors', `<table class="table"><thead><tr><th>Doctor</th><th>From</th><th>To</th><th>Reason</th></tr></thead><tbody>${(p.assignments || []).map(h => `<tr><td class="cell-title">${esc(h.doctor)}</td><td>${esc(fmtDate(h.start_ts))}</td><td>${h.end_ts ? esc(fmtDate(h.end_ts)) : '<span class="badge success">Current</span>'}</td><td>${esc(h.reason || '')}</td></tr>`).join('')}</tbody></table>`)}
     ${card('Appointments and notes (all doctors)', appts ? `<div class="table-wrap"><table class="table"><thead><tr><th>When / doctor</th><th>Status</th><th>Reason</th><th>Note</th><th></th></tr></thead><tbody>${appts}</tbody></table></div>` : stateBox('No appointments', ''))}</div>`;
 }
@@ -344,9 +452,9 @@ async function dHome() {
   const s = await api('/doctor/summary'); const today = ymd(new Date()); const tCount = s.upcoming.filter(a => a.start_ts.startsWith(today)).length;
   const pr = s.patients.map(p => `<tr><td class="cell-title">${esc(p.name)}<div class="cell-sub">${esc(p.email)}</div></td><td>${p.intake ? '<span class="badge success">Done</span>' : '<span class="badge progress">Pending</span>'}</td>
     <td>${p.last_scan ? esc(p.last_scan.summary) + (p.last_scan.suggest_appointment ? ' <span class="badge accent">Review suggested</span>' : '') : '<span class="muted">No scan</span>'}</td><td>${p.next_appointment ? esc(fmtDT(p.next_appointment)) : '-'}</td><td class="actions"><a class="btn btn-secondary btn-sm" href="#/patient/${p.id}">Open record</a></td></tr>`).join('');
-  const up = s.upcoming.map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}</td><td><a href="#/patient/${a.patient_id}">${esc(a.patient)}</a></td><td>${esc(a.reason || '')}</td></tr>`).join('');
+  const up = s.upcoming.map(a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}${movedBadge(a)}</td><td><a href="#/patient/${a.patient_id}">${esc(a.patient)}</a></td><td>${esc(a.reason || '')}</td><td class="actions">${reschedBtn(a, 'doctor')}</td></tr>`).join('');
   return { title: 'Dashboard', sub: 'Your patients and schedule', html: `<div class="grid cols-4">${tile('My patients', s.patients.length)}${tile('Upcoming appointments', s.upcoming.length)}${tile('Today', tCount)}${tile('Former patients', s.former_patients.length, 'read-only access')}</div>
-    <div class="stack" style="margin-top:24px">${card('Upcoming appointments', up ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Patient</th><th>Reason</th></tr></thead><tbody>${up}</tbody></table></div>` : stateBox('Nothing scheduled', ''))}
+    <div class="stack" style="margin-top:24px">${card('Upcoming appointments', up ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Patient</th><th>Reason</th><th></th></tr></thead><tbody>${up}</tbody></table></div>` : stateBox('Nothing scheduled', ''))}
     ${card('My patients', pr ? `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>Health form</th><th>Latest scan</th><th>Next visit</th><th></th></tr></thead><tbody>${pr}</tbody></table></div>` : stateBox('No patients yet', 'Patients appear here once they choose you.'))}
     ${s.former_patients.length ? card('Former patients (moved to another doctor)', `<ul class="legend">${s.former_patients.map(f => `<li><a href="#/patient/${f.id}">${esc(f.name)}</a><span class="count muted small">left ${esc(fmtDate(f.left_on))}</span></li>`).join('')}</ul>`) : ''}</div>` };
 }
@@ -355,8 +463,8 @@ async function dPatient(id) {
   return { title: p.name, sub: p.is_current_doctor ? 'Current patient' : 'Former patient: you have read-only access to this record', crumb: '<a href="#/home">Dashboard</a> / Patient', html: recordHtml(p, { canNote: true }), mount: r => noteHandlers(r, route) };
 }
 async function dAppointments() {
-  const s = await api('/doctor/summary'); const row = a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}</td><td><a href="#/patient/${a.patient_id}">${esc(a.patient)}</a></td><td>${statusBadge(a.status)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '-'}</td>
-    <td class="actions"><button class="btn btn-secondary btn-sm" data-note="${a.id}" data-text="${esc(a.note || '')}">${a.note ? 'Edit note' : 'Add note'}</button></td></tr>`;
+  const s = await api('/doctor/summary'); const row = a => `<tr><td class="cell-title">${esc(fmtDT(a.start_ts))}</td><td><a href="#/patient/${a.patient_id}">${esc(a.patient)}</a></td><td>${statusBadge(a.display_status || a.status)}${movedBadge(a)}</td><td>${esc(a.reason || '')}</td><td>${a.note ? `<div class="note-box">${esc(a.note)}</div>` : '-'}</td>
+    <td class="actions">${reschedBtn(a, 'doctor')} <button class="btn btn-secondary btn-sm" data-note="${a.id}" data-text="${esc(a.note || '')}">${a.note ? 'Edit note' : 'Add note'}</button></td></tr>`;
   const tbl = rows => rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Patient</th><th>Status</th><th>Reason</th><th>Note</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>` : stateBox('None', '');
   return { title: 'Appointments', sub: 'Upcoming and previous visits', html: `<div class="stack">${card('Upcoming', tbl(s.upcoming))}${card('Previous', tbl(s.previous))}</div>`, mount: r => noteHandlers(r, route) };
 }
@@ -380,7 +488,45 @@ async function dAvailability() {
 async function aHome() {
   const [st, docs] = await Promise.all([api('/admin/stats'), api('/admin/doctors')]);
   return { title: 'Overview', sub: 'Everything across the platform', html: `<div class="grid cols-4">${tile('Doctors', st.doctors)}${tile('Patients', st.patients, st.unassigned_patients + ' not yet assigned')}${tile('Face scans', st.scans)}${tile('Booked appointments', st.booked)}</div>
-    <div style="margin-top:24px">${card('Doctors', `<div class="table-wrap"><table class="table"><thead><tr><th>Doctor</th><th>Focus</th><th class="num">Patients</th><th class="num">Upcoming</th><th></th></tr></thead><tbody>${docs.map(d => `<tr><td class="cell-title">${esc(d.name)}<div class="cell-sub">${esc(d.email)}</div></td><td>${esc(d.specialization)}</td><td class="num">${d.patients}</td><td class="num">${d.upcoming}</td><td class="actions"><a class="btn btn-secondary btn-sm" href="#/adoctor/${d.id}">View patients</a></td></tr>`).join('')}</tbody></table></div>`)}</div>` };
+    <div style="margin-top:24px">${card('Doctors', `<div class="table-wrap"><table class="table"><thead><tr><th>Doctor</th><th>Focus</th><th class="num">Patients${infoTip('Patients who currently have this doctor.')}</th><th class="num">Upcoming${infoTip('Appointments already booked with this doctor from now onward.')}</th><th></th></tr></thead><tbody>${docs.map(d => `<tr><td class="cell-title">${esc(d.name)}<div class="cell-sub">${esc(d.email)}</div></td><td>${esc(d.specialization)}</td><td class="num">${d.patients}</td><td class="num">${d.upcoming}</td><td class="actions"><a class="btn btn-secondary btn-sm" href="#/adoctor/${d.id}">View patients</a></td></tr>`).join('')}</tbody></table></div>`)}</div>` };
+}
+const A_COL = { completed: '#2e7d32', upcoming: '#4674b9', missed: '#c0392b', cancelled: '#9aa5b1' };
+function stackedBars(weeks) {
+  const W = 760, H = 270, m = { l: 40, r: 12, t: 12, b: 40 }, n = weeks.length, bw = (W - m.l - m.r) / n; const max = Math.max(4, ...weeks.map(w => w.completed + w.upcoming + w.missed + w.cancelled)) * 1.1;
+  const y = v => H - m.b - v / max * (H - m.t - m.b); const thisWeek = ymd((() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })());
+  const grid = [0, 1, 2, 3, 4].map(k => { const v = max * k / 4; return `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="#ececec"/><text x="${m.l - 6}" y="${y(v) + 4}" font-size="11" text-anchor="end" fill="#6b6b6b">${Math.round(v)}</text>`; }).join('');
+  const bars = weeks.map((w, i) => { let acc = 0; const x = m.l + i * bw + bw * 0.14, ww = bw * 0.72; const segs = ['completed', 'upcoming', 'missed', 'cancelled'].map(k => { const v = w[k]; if (!v) return ''; const y0 = y(acc + v), h = y(acc) - y0; acc += v; return `<rect x="${x}" y="${y0}" width="${ww}" height="${h}" fill="${A_COL[k]}"><title>${k}: ${v} (week of ${w.week})</title></rect>`; }).join('');
+    const cur = w.week === thisWeek; return segs + `<text x="${x + ww / 2}" y="${H - 22}" font-size="11" text-anchor="middle" fill="${cur ? '#325385' : '#6b6b6b'}" font-weight="${cur ? 700 : 400}">${esc(D(w.week + ' 00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }))}</text>${cur ? `<text x="${x + ww / 2}" y="${H - 8}" font-size="10" text-anchor="middle" fill="#325385">this week</text>` : ''}`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Appointments per week by outcome">${grid}${bars}</svg>`;
+}
+const pctOf = (v, t) => t ? Math.round(100 * v / t) : 0;
+async function aAnalytics() {
+  const d = await api('/admin/analytics'), A = d.appointments, R = d.recovery, rs = d.reschedules, sc = d.scanning;
+  const att = A.attendance_rate === null ? '-' : Math.round(A.attendance_rate * 100) + '%'; const scored = R.improved + R.stable + R.worsened; const spt = d.totals.patients || 1;
+  const legend = items => `<ul class="legend">${items.map(([c, l, v, p]) => `<li><span class="swatch ${c}"></span>${esc(l)}<span class="count">${v}${p !== undefined ? ` <span class="muted small">(${p}%)</span>` : ''}</span></li>`).join('')}</ul>`;
+  const stack = parts => { const t = parts.reduce((a, [, v]) => a + v, 0) || 1; return `<div class="stackbar">${parts.map(([c, v]) => `<span class="${c}" style="--w:${100 * v / t}%" title="${v}"></span>`).join('')}</div>`; };
+  const edgeLabels = ['Down 40% or more', 'Down 15 to 40%', 'About the same (within 15%)', 'Up 15 to 40%', 'Up 40% or more']; const hmax = Math.max(1, ...R.histogram.counts);
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']; const dmax = Math.max(1, ...d.by_weekday); const recBy = Object.fromEntries(R.by_doctor.map(x => [x.doctor_id, x]));
+  const drows = d.doctors.map(x => { const r = recBy[x.id] || { improved: 0, stable: 0, worsened: 0 };
+    return `<tr><td class="cell-title">${esc(x.name)}<div class="cell-sub">${esc(x.specialization)}</div></td><td class="num">${x.patients}</td><td class="num">${x.completed}</td><td class="num">${x.missed}</td><td class="num">${x.cancelled}</td><td class="num">${x.upcoming}</td>
+      <td class="num">${x.attendance_rate === null ? '-' : Math.round(x.attendance_rate * 100) + '%'}</td><td style="min-width:110px"><div class="bar-track" title="${x.utilisation === null ? '' : Math.round(x.utilisation * 100) + '% of slots booked'}"><div class="bar-fill" style="--w:${Math.round(100 * (x.utilisation || 0))}%"></div></div></td>
+      <td class="num">${x.rescheduled}</td><td style="min-width:120px">${stack([['c-green', r.improved], ['c-blue', r.stable], ['c-red', r.worsened]])}</td></tr>`; }).join('');
+  return { title: 'Analytics', sub: 'Appointments, doctors and patient recovery across the platform',
+    html: `<div class="stack"><div class="grid cols-4">${tile('Doctors', d.totals.doctors)}${tile('Patients', d.totals.patients, d.totals.scans + ' face scans in total')}${tile('Appointments', d.totals.appointments, 'all time, including cancelled')}${tile('Attendance rate', att, 'completed visits out of completed + missed')}</div>
+    <div class="grid auto">${tile('Completed', A.completed)}${tile('Upcoming', A.upcoming)}${tile('Missed', A.missed, 'booked, time passed, not completed', A.missed ? 'warn' : '')}${tile('Cancelled', A.cancelled)}${tile('Rescheduled', A.rescheduled, 'times an appointment was moved')}</div>
+    ${card('Appointments by week', stackedBars(d.weekly) + legend([['c-green', 'Completed', d.weekly.reduce((a, w) => a + w.completed, 0)], ['c-blue', 'Upcoming', d.weekly.reduce((a, w) => a + w.upcoming, 0)], ['c-red', 'Missed', d.weekly.reduce((a, w) => a + w.missed, 0)], ['c-gray', 'Cancelled', d.weekly.reduce((a, w) => a + w.cancelled, 0)]]).replace('class="legend"', 'class="legend" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))"'), `<span class="muted small">last 8 weeks and next 4</span>`)}
+    <div class="grid cols-2">
+      ${card('Patient recovery', `<p class="muted small" style="margin-bottom:8px">Compares each patient's first scans with their latest scans (average spots found). ${infoTip('Improved = 15% or more fewer spots; worsened = 15% or more more spots; otherwise stable. Needs at least 2 scans.')}</p>
+        <div class="tile-value" style="margin-bottom:8px">${R.rate === null ? '-' : Math.round(R.rate * 100) + '%'} <span class="muted small" style="font-weight:400">of patients improved</span></div>${stack([['c-green', R.improved], ['c-blue', R.stable], ['c-red', R.worsened]])}
+        ${legend([['c-green', 'Improved', R.improved, pctOf(R.improved, scored)], ['c-blue', 'Stable', R.stable, pctOf(R.stable, scored)], ['c-red', 'Worsened', R.worsened, pctOf(R.worsened, scored)], ['c-gray', 'Not enough scans yet', R.insufficient]])}
+        <div class="bars" style="margin-top:12px">${edgeLabels.map((l, i) => `<div class="bar-row"><span>${l}</span><div class="bar-track"><div class="bar-fill ${i < 2 ? '' : i === 2 ? '' : 'accent'}" style="--w:${100 * R.histogram.counts[i] / hmax}%"></div></div><span>${R.histogram.counts[i]}</span></div>`).join('')}</div>`)}
+      <div class="stack">${card('Weekly scanning', `<p class="muted small" style="margin-bottom:8px">How up to date patients are with their weekly face scan.</p>${stack([['c-green', sc.scanned_last_7_days], ['c-amber', sc.due], ['c-red', sc.overdue], ['c-gray', sc.never]])}
+        ${legend([['c-green', 'Scanned in the last 7 days', sc.scanned_last_7_days, pctOf(sc.scanned_last_7_days, spt)], ['c-amber', 'Due (7 to 9 days)', sc.due, pctOf(sc.due, spt)], ['c-red', 'Overdue (10+ days)', sc.overdue, pctOf(sc.overdue, spt)], ['c-gray', 'Never scanned', sc.never, pctOf(sc.never, spt)]])}`)}
+      ${card('Busiest days', `<div class="bars">${days.map((l, i) => `<div class="bar-row"><span>${l}</span><div class="bar-track"><div class="bar-fill" style="--w:${100 * d.by_weekday[i] / dmax}%"></div></div><span>${d.by_weekday[i]}</span></div>`).join('')}</div>`)}</div></div>
+    ${card('Doctors', `<div class="table-wrap"><table class="table"><thead><tr><th>Doctor</th><th class="num">Patients</th><th class="num">Completed</th><th class="num">Missed</th><th class="num">Cancelled</th><th class="num">Upcoming</th>
+      <th class="num">Attendance${infoTip('Completed visits out of completed + missed. Cancelled visits are not counted.')}</th><th>Utilisation${infoTip('Share of the doctor’s weekly slots that are booked, over the last 8 and next 4 weeks.')}</th><th class="num">Moved${infoTip('Appointments that were rescheduled at least once.')}</th><th>Patient recovery${infoTip('Green improved, blue stable, red worsened.')}</th></tr></thead><tbody>${drows}</tbody></table></div>`)}
+    ${card('Rescheduling', `<div class="grid cols-2" style="margin-bottom:12px">${tile('Moved by patients', rs.by_patient)}${tile('Moved by doctors', rs.by_doctor, 'for example doctor unavailable')}</div>${rs.top_reasons.length ? `<table class="table"><thead><tr><th>Reason</th><th>By</th><th class="num">Times</th></tr></thead><tbody>${rs.top_reasons.map(x => `<tr><td class="cell-title" style="text-transform:capitalize">${esc(x.reason)}</td><td>${esc(x.by)}</td><td class="num">${x.count}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No reasons recorded yet.</p>'}`)}
+    <div class="alert alert-info">${icon('info')}<div>Recovery and scanning figures are aggregates. Individual scans, results and photos stay private to the patient and the doctors they have been under.</div></div></div>` };
 }
 async function aDoctor(id) {
   const [docs, pats] = await Promise.all([api('/admin/doctors'), api(`/admin/doctors/${id}/patients`)]); const d = docs.find(x => x.id === +id);
@@ -413,7 +559,7 @@ async function aAddDoctor() {
 const PAGES = {
   patient: { home: pHome, scan: pScan, progress: pProgress, appointments: pAppointments, doctor: pDoctor, intake: pIntake },
   doctor: { home: dHome, appointments: dAppointments, availability: dAvailability, patient: dPatient },
-  admin: { home: aHome, calendar: aCalendar, emails: aEmails, 'add-doctor': aAddDoctor, adoctor: aDoctor, apatient: aPatient },
+  admin: { home: aHome, analytics: aAnalytics, calendar: aCalendar, emails: aEmails, 'add-doctor': aAddDoctor, adoctor: aDoctor, apatient: aPatient },
 };
 async function route() {
   if (!me) return loginView();
@@ -431,6 +577,14 @@ async function boot() {
   if (me && me.role === 'patient' && me.scan_status && me.scan_status.due && !sessionStorage.getItem('dueShown')) { sessionStorage.setItem('dueShown', '1'); toast('Your weekly face scan is due', ''); }
   route();
 }
+document.addEventListener('click', e => {
+  const p = $('#umenu'); if (p && !p.hidden && !e.target.closest('#usermenu')) { p.hidden = true; $('#umbtn').setAttribute('aria-expanded', 'false'); }
+  const t = e.target.closest('[data-photo-toggle]');
+  if (t) { const img = t.closest('figure').querySelector('img'), orig = img.dataset.kind === 'annotated'; img.dataset.kind = orig ? 'original' : 'annotated'; img.src = `/api/scans/${img.dataset.sid}/photo/${img.dataset.view}/${img.dataset.kind}`; t.textContent = orig ? 'show spots marked' : 'show original'; }
+  const rs = e.target.closest('[data-resched]'); if (rs) rescheduleModal(rs.dataset.resched, rs.dataset.when, rs.dataset.who);
+  const b = e.target.closest('[data-scan-photos]'); if (b) modal(`Photos · ${b.dataset.date}`, photoGallery(b.dataset.scanPhotos, b.dataset.views.split(',')), '<button class="btn btn-secondary" data-close>Close</button>').el.querySelector('.modal').classList.add('wide');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { const p = $('#umenu'); if (p && !p.hidden) { p.hidden = true; $('#umbtn').focus(); } } });
 addEventListener('hashchange', route);
 boot();
 })();

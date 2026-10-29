@@ -3,16 +3,29 @@
 Three-level SaaS (admin -> doctor -> patient). Patients scan their face (front, left, right) weekly; the scan splits the face into five zones and counts spots per zone; zones are linked to body areas using
 **Ayurveda and Traditional Chinese Medicine face maps, shown as traditional and unproven, never as a diagnosis**. Doctors get weekly availability charts, patient records and notes; admins get everything plus a master calendar.
 
+**Integrating the friend's acne detector:** see [HANDOFF_TANAYA.md](HANDOFF_TANAYA.md) and [DETECTOR_INTEGRATION.md](DETECTOR_INTEGRATION.md).
+
 **Watch the overview:** [docs/faceveda_overview.mp4](docs/faceveda_overview.mp4) (about 3 minutes, captioned) | narration script: [docs/video_script.md](docs/video_script.md) | screenshots: [docs/screenshots/](docs/screenshots/)
 
 **Quick start**
 ```
 pip install fastapi uvicorn opencv-python numpy scikit-learn scipy joblib onnxruntime ultralytics pillow
-python3 seed.py          # demo data (demo logins are listed at the top of seed.py)
+python3 demo_data.py build ~/Downloads/patients_part1 ~/Downloads/patients_part2   # once: scans real photos into data/demo_cache (slow)
+python3 seed.py          # large demo: 8 doctors, 36 patients, ~300 scans with stored photos, full calendar (python3 seed.py --quick = small demo without photos)
 python3 app.py           # http://127.0.0.1:7890
 python3 -m pytest -q     # 21 tests
 ```
 The scan needs the Clinderma V_3 pipeline and its two model files (set `CLINDERMA_V3` to its folder, default `../Clinderma/V_3`).
+
+**Appointments**: patients and doctors can reschedule an upcoming appointment to any free slot of that doctor (the doctor can do it at the last moment if unavailable; the patient is emailed with the reason).
+Every move is logged (`appointment_changes`). A booked appointment whose time has passed without being completed shows as **missed** (derived, no extra status). The admin **Analytics** page shows appointments by outcome and week,
+attendance, doctor utilisation, patient recovery (from scan trends, aggregate only) and rescheduling.
+
+**Privacy rules (enforced by the server, with tests)**
+- Face photos are stored. Only the patient and every doctor that patient has ever had can see them. Admins cannot, including when an admin uses *Change view* to preview a doctor's or patient's screens
+  (that preview is read-only and hides photos). Admins see only the number of scans.
+- Photos are stored on disk under `data/scan_photos` with owner-only file permissions and served only through an access-checked endpoint. They are **not encrypted at rest** (that needs the `cryptography` package); `data/` is git-ignored.
+- The demo uses real patient photos from a local folder. Never commit `data/`; never publish screenshots that show those faces.
 
 **What is measured, what is simulated, what is not proven**
 - Measured: scan accuracy per face zone on expert-labelled photos (`models/spot_filter_metrics.json`, `results/spot_filter_cv.json`).

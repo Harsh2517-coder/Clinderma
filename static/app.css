@@ -40,3 +40,19 @@
 .outlook summary { cursor: pointer; }
 .outlook ul.clean, .finding ul.clean { list-style: disc; padding-left: 1.2rem; margin: 6px 0; }
 .auth-card .logo-full { mix-blend-mode: multiply; }
+
+.info-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; border-radius: 50%; background: rgba(255, 255, 255, .28); color: #fff; font: italic 700 11px/1 var(--font); cursor: help; position: relative; vertical-align: middle; }
+.info-dot:hover, .info-dot:focus-visible { background: #fff; color: var(--navy-700); }
+.info-dot::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: -6px; width: max-content; max-width: 230px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--ink-900); color: #fff; font: normal 500 12px/1.4 var(--font); text-transform: none; letter-spacing: 0; white-space: normal; text-align: left; box-shadow: var(--shadow-md); opacity: 0; visibility: hidden; transition: opacity .12s; z-index: 70; pointer-events: none; }
+.info-dot:hover::after, .info-dot:focus-visible::after { opacity: 1; visibility: visible; }
+.table-wrap:has(.info-dot) { overflow: visible; }
+.photo-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s-4); }
+.photo-gallery figure { margin: 0; }
+.photo-gallery img { width: 100%; max-height: 440px; object-fit: contain; border-radius: var(--r-md); border: 1px solid var(--line-soft); background: var(--surface-alt); display: block; }
+.photo-gallery figcaption { font-size: var(--text-sm); color: var(--ink-500); margin-top: var(--s-1); }
+.link-btn.small { font-size: var(--text-sm); }
+.user-btn .label { color: #fff; }
+.c-amber { background: #c99a1b; } .c-blue { background: var(--blue-500); } .c-red { background: #c0392b; } .c-gray { background: #9aa5b1; } .c-green { background: #2e7d32; }
+.stackbar span { display: block; }
+.stackbar { display: flex; }
+td.actions .btn + .btn { margin-left: 6px; }

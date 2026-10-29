@@ -97,6 +97,13 @@ def find_spots(r, img_bgr, zm0):
     return [c for c, k in zip(cands, keep) if k], proposed, "built-in spot finder + trained filter"
 
 
+def detect_view(zm0):
+    """front / left / right from how the cheek areas split around the nose: a profile shows one cheek far larger than the other.
+    left = the person's LEFT cheek is the visible one (image-right of the nose), matching the zone names used everywhere else."""
+    l, r = int(zm0["left_cheek"].sum()), int(zm0["right_cheek"].sum())
+    return "front" if max(l, r) < 2.5 * max(1, min(l, r)) else ("left" if l > r else "right")
+
+
 def scan_image(img_bgr, side=None):
     """side=None for a front photo; "left"/"right" for a profile photo: the visible cheek is the whole cheek area of that photo.
     Returns {"status": "ok", zone_counts, zone_area, total_spots, preview(bgr crop with zones+spots)} or {"status": "no_face"|"no_zones", message}."""
@@ -105,6 +112,8 @@ def scan_image(img_bgr, side=None):
     zm = zone_masks(r["class_mask"], r["face_mask"])
     if zm is None: return {"status": "no_zones", "message": "The face could not be mapped. Try a straight-on photo with the whole face in view."}
     zm0 = {z: m.copy() for z, m in zm.items()}
+    view = detect_view(zm0)
+    if side == "auto": side = None if view == "front" else view          # auto: decide from the face layout
     if side in ("left", "right"):                                   # profile: the far-side sliver is not a cheek, fold both halves into the visible cheek
         keep, other = f"{side}_cheek", ("right_cheek" if side == "left" else "left_cheek"); zm[keep] = zm[keep] | zm[other]; zm[other] = np.zeros_like(zm[keep])
     cands, proposed, method = find_spots(r, img_bgr, zm0)
@@ -116,7 +125,7 @@ def scan_image(img_bgr, side=None):
         x0, y0, x1, y1 = c["box"]; cx, cy = (c["core"][0] + c["core"][2]) // 2, (c["core"][1] + c["core"][3]) // 2
         z = next((z for z, m in zm.items() if 0 <= cy < m.shape[0] and 0 <= cx < m.shape[1] and m[cy, cx]), None)
         if z: counts[z] += 1; cv2.rectangle(prev, (x0, y0), (x1, y1), (255, 255, 255), t + 1); cv2.rectangle(prev, (x0, y0), (x1, y1), colors[z], t)
-    return {"status": "ok", "zone_counts": counts, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "preview": prev}
+    return {"status": "ok", "view": view, "zone_counts": counts, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "preview": prev}
 
 
 if __name__ == "__main__":      # python3 scan.py photo.jpg [out.jpg]  -> prints zone counts, writes the zone/spot preview
