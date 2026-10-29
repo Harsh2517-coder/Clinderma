@@ -1,0 +1,18 @@
+FaceVeda acne detector: locally trained RF-DETR small (NOT the Roboflow-hosted model)
+trained:            29 Oct 2026 on Harsh's MacBook (Apple M5), 20 epochs, best epoch 17 of 20 (by validation mAP@50)
+model files:        rfdetr-small.onnx (sha256 fb665d16d1daa6a8...)   acne_rfdetr_small.pth (sha256 42b462f79cce5023...)
+architecture:       RF-DETR small, 512 x 512, start weights: Roboflow COCO rf-detr-small
+class order:        0 comedone, 1 nodule, 2 papule, 3 pustule   (no cyst: this dataset has none). Class index offset = 0 (verified).
+onnx outputs:       dets (1,300,4) = cx,cy,w,h normalised 0..1 ; labels (1,300,5) = logits, apply sigmoid; use channels 0-3, channel 4 is unused
+input:              RGB, plain photo stretched to 512x512 (no crop), /255, ImageNet mean/std normalised (matches Roboflow preprocessing "resize 512x512 stretch")
+trained on:         Roboflow dataset tanayaaa/acne-detection-v1-tjjbs v2 (ACNE04 images with lesion-type boxes, CC BY 4.0)
+                    1135 source photos (one copy each of the 3x-augmented set), validated on 213, TESTED on 71 never-seen photos (944 lesions)
+validation best:    mAP@50 0.300, mAP@50-95 0.073, precision 0.36, recall 0.46 (213 photos, used to pick the epoch)
+TEST (71 photos, IoU>=0.5), any lesion type / lesion type must also match:
+   conf 0.15 (default)   precision 0.25 / 0.19    recall 0.54 / 0.41
+   conf 0.30             precision 0.42 / 0.34    recall 0.39 / 0.31      <- best F1 for counting spots (0.40)
+   conf 0.50             precision 0.59 / 0.51    recall 0.10 / 0.09
+   per type @0.30: comedone P0.33 R0.40 | nodule P0.36 R0.18 | papule P0.31 R0.30 | pustule P0.36 R0.49
+limits:             moderate accuracy. It finds roughly 4 in 10 lesions at about 4 in 10 correct. Nodule recall is low. Photos are
+                    ACNE04 close-ups, not the 3-view patient photos, so accuracy on those is not yet measured.
+                    A retrain, so numbers differ from Tanaya's original Roboflow model, which was never available to measure.

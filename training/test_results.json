@@ -1,0 +1,182 @@
+{
+ "conf0.15_any_lesion": {
+  "precision": 0.25,
+  "recall": 0.537,
+  "f1": 0.341,
+  "tp": 507,
+  "fp": 1520,
+  "fn": 437,
+  "per_class": {
+   "comedone": {
+    "precision": 0.255,
+    "recall": 0.556,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.243,
+    "recall": 0.465,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.269,
+    "recall": 0.545,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.231,
+    "recall": 0.629,
+    "gt": 205
+   }
+  }
+ },
+ "conf0.15_class_aware": {
+  "precision": 0.19,
+  "recall": 0.409,
+  "f1": 0.26,
+  "tp": 386,
+  "fp": 1641,
+  "fn": 558,
+  "per_class": {
+   "comedone": {
+    "precision": 0.208,
+    "recall": 0.489,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.187,
+    "recall": 0.336,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.193,
+    "recall": 0.383,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.187,
+    "recall": 0.551,
+    "gt": 205
+   }
+  }
+ },
+ "conf0.3_any_lesion": {
+  "precision": 0.423,
+  "recall": 0.387,
+  "f1": 0.404,
+  "tp": 365,
+  "fp": 498,
+  "fn": 579,
+  "per_class": {
+   "comedone": {
+    "precision": 0.417,
+    "recall": 0.444,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.451,
+    "recall": 0.261,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.4,
+    "recall": 0.399,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.438,
+    "recall": 0.546,
+    "gt": 205
+   }
+  }
+ },
+ "conf0.3_class_aware": {
+  "precision": 0.336,
+  "recall": 0.307,
+  "f1": 0.321,
+  "tp": 290,
+  "fp": 573,
+  "fn": 654,
+  "per_class": {
+   "comedone": {
+    "precision": 0.327,
+    "recall": 0.4,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.356,
+    "recall": 0.179,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.311,
+    "recall": 0.303,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.359,
+    "recall": 0.493,
+    "gt": 205
+   }
+  }
+ },
+ "conf0.5_any_lesion": {
+  "precision": 0.588,
+  "recall": 0.1,
+  "f1": 0.17,
+  "tp": 94,
+  "fp": 66,
+  "fn": 850,
+  "per_class": {
+   "comedone": {
+    "precision": 0.5,
+    "recall": 0.178,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.706,
+    "recall": 0.038,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.5,
+    "recall": 0.066,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.636,
+    "recall": 0.239,
+    "gt": 205
+   }
+  }
+ },
+ "conf0.5_class_aware": {
+  "precision": 0.512,
+  "recall": 0.087,
+  "f1": 0.149,
+  "tp": 82,
+  "fp": 78,
+  "fn": 862,
+  "per_class": {
+   "comedone": {
+    "precision": 0.471,
+    "recall": 0.178,
+    "gt": 45
+   },
+   "nodule": {
+    "precision": 0.545,
+    "recall": 0.019,
+    "gt": 318
+   },
+   "papule": {
+    "precision": 0.392,
+    "recall": 0.053,
+    "gt": 376
+   },
+   "pustule": {
+    "precision": 0.593,
+    "recall": 0.234,
+    "gt": 205
+   }
+  }
+ }
+}

@@ -1,6 +1,9 @@
 # Plugging in the Roboflow-trained acne detector
 
-## Status (what we know from the friend)
+## Status
+- **29 Oct 2026: a locally retrained RF-DETR small (4 classes: comedone, nodule, papule, pustule) exists.** See `training/README.md`; the ONNX is on the GitHub Release `acne-detector-v1`. Settings: `DETECTOR=onnx`, `DETECTOR_CLASSES=comedone,nodule,papule,pustule`, `DETECTOR_INPUT=full`, `DETECTOR_CONF=0.30`, `DETECTOR_SIZE=512`.
+
+## Older notes (what we knew before retraining)
 - Model: **RF-DETR small** (Roboflow id `tanayaaa/acne-detection-v1-tjjbs-2-rfdetr-small-t1`), trained on **plain photos**, so use `DETECTOR_INPUT=full`.
 - Classes (from the friend's notes, to be confirmed in index order): comedone, papule, pustule, nodule, cyst.
 - **The model file is not available yet.** On GitHub, `tanaya1806/clinderma_acne` has only the `main` branch (no model file, release, fork or LFS), and her backend still calls the hosted Roboflow API.
