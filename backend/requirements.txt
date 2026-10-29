@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+onnxruntime
+opencv-python
+numpy
+Pillow
+python-multipart
+requests

@@ -1,0 +1,7 @@
+ultralytics>=8.3
+torch>=2.0
+opencv-python>=4.8,<5   # 4.10 tested; OpenCV 5 dropped APIs we use
+numpy
+scipy
+onnxruntime
+gradio
