@@ -22,7 +22,8 @@ Measured on ACNE04 close-ups only, not on the 3-view patient photos.
 - On a 16 GB Mac use batch 2 with gradient accumulation 8 and `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.85`; the default memory use swapped the machine to a halt, and 0.6 ran out of GPU memory.
 - ONNX output: `dets` (1,300,4) = cx,cy,w,h normalised; `labels` (1,300,5) logits, apply sigmoid; classes are channels 0-3, no offset. Input: RGB, stretched to 512x512, ImageNet mean/std.
 
-## What Tanaya can do next
-- Train the **5-class** version (with cyst) on her `ACNE_COMBINED_DATASET` (6976 train / 1220 val / 989 test): point `make_1x_dataset.py`/`train.py` at it and change the class list.
-- Run on a bigger, GPU machine for more epochs; the validation curve was still rising slowly at epoch 20 (`training_metrics.csv`).
-- Measure the detector on the 3-view patient photos with `eval_detector.py` (needs labelled photos).
+## What would actually improve it (all training happens on Harsh's Mac; nobody needs a GPU)
+- **The curve has plateaued**: validation mAP@50 reached about 0.29 at epoch 6 and stayed there to epoch 20 (`training_metrics.csv`). More epochs on this data will not help.
+- **More and different data is the lever.** Tanaya's 5-class `ACNE_COMBINED_DATASET` (with cyst; 6976 train / 1220 val / 989 test) is about 2x the data. She sends it to Harsh privately (zip, not GitHub); Harsh trains on it here (a few hours).
+- **Photos like FaceVeda's.** All 71 test photos are ACNE04 close-ups, so accuracy on the 3-view patient photos is unmeasured. Labelled patient photos would be the most useful data of all.
+- The images in the Roboflow export are already shrunk to 512x512, so training at a higher resolution on them would add no detail.
