@@ -52,11 +52,11 @@ const card = (title, body, head = '') => `<section class="card"><div class="card
 /* ---------------- shell ---------------- */
 const NAV = {
   patient: [['home', 'Home', 'home'], ['scan', 'Face scan', 'scan'], ['progress', 'My progress', 'chart'], ['appointments', 'Appointments', 'cal'], ['doctor', 'My doctor', 'doctor'], ['intake', 'My health form', 'form']],
-  doctor: [['home', 'Dashboard', 'home'], ['appointments', 'Appointments', 'cal'], ['availability', 'Availability', 'clock']],
-  admin: [['home', 'Overview', 'home'], ['analytics', 'Analytics', 'chart'], ['calendar', 'Master calendar', 'cal'], ['emails', 'Email log', 'mail'], ['add-doctor', 'Add a doctor', 'plus']],
+  doctor: [['home', 'Dashboard', 'home'], ['appointments', 'Appointments', 'cal'], ['availability', 'Availability', 'clock'], ['/acne-lab/', 'Acne Lab (GAGS)', 'scan']],
+  admin: [['home', 'Overview', 'home'], ['analytics', 'Analytics', 'chart'], ['calendar', 'Master calendar', 'cal'], ['/acne-lab/', 'Acne Lab (GAGS)', 'scan'], ['emails', 'Email log', 'mail'], ['add-doctor', 'Add a doctor', 'plus']],
 };
 function shell(nav, active, inner) {
-  const links = nav ? NAV[me.role].map(([k, l, i]) => `<a class="nav-link" href="#/${k}" ${k === active ? 'aria-current="page"' : ''}>${icon(i)}<span class="label">${l}</span></a>`).join('') : '';
+  const links = nav ? NAV[me.role].map(([k, l, i]) => `<a class="nav-link" href="${k.startsWith('/') ? k : '#/' + k}" ${k === active ? 'aria-current="page"' : ''}>${icon(i)}<span class="label">${l}</span></a>`).join('') : '';
   app.innerHTML = `<div class="app-shell ${nav ? '' : 'is-collapsed'}" style="${nav ? '' : 'grid-template-columns:minmax(0,1fr);grid-template-areas:\'top\' \'main\''}">
     <header class="topbar"><a class="brand" href="#/home"><span class="brand-mark">${markImg()}</span><span>FaceVeda</span></a>${previewChip()}<span class="topbar-spacer"></span>
       <span class="role-chip">${esc(me.role)}</span>${userMenuHtml()}</header>
@@ -196,6 +196,18 @@ function simulatedHtml(rep) {
     <ul class="legend">${o.tiers.map(t => `<li><span>${esc(t.label)}</span><span class="count"><span class="badge ${cls[t.tier]}">${txt[t.tier]}</span></span></li>`).join('')}</ul>
     <p class="muted small">Tiers compare you with the simulated population, using your health form, your scan and the assumed face-map link (${esc(o.scenario)} strength). They are not probabilities.</p></div></details>`;
 }
+const GAGS_TONE = { Clear: 'success', Mild: 'info', Moderate: 'progress', Severe: 'danger', 'Very Severe': 'danger' };
+function gagsHtml(rep) {
+  const g = rep.gags; if (!g) return '';
+  const rows = Object.keys(ZONE_LABEL).map(z => { const d = g.zones[z] || { count: 0, max_grade: 0, factor: 1, score: 0, types: {} }; const t = Object.entries(d.types).map(([c, n]) => `${n} ${esc(c)}`).join(', ') || 'none';
+    return `<tr><td class="cell-title">${ZONE_LABEL[z]}</td><td>${t}</td><td class="num">${d.max_grade}</td><td class="num">&times;${d.factor}</td><td class="num"><strong>${d.score}</strong></td></tr>`; }).join('');
+  const types = (g.acne_types || []).map(t => `<li><strong>${esc(t.type)}</strong>: ${t.count} (${t.percent}%) <span class="muted small">${esc(t.description)}</span></li>`).join('') || '<li>No acne lesions found.</li>';
+  return `<div class="finding"><h3>Acne grading (GAGS) <span class="badge ${GAGS_TONE[g.severity] || 'neutral'}">${esc(g.severity)}</span> <span class="muted small">score ${g.total_score} of ${g.max_score}</span></h3>
+    ${g.severity_basis === 'lesion_count' ? alertBox('info', `Raised from <strong>${esc(g.gags_severity)}</strong> (zone score) to <strong>${esc(g.severity)}</strong> because of the number of lesions found.`) : ''}
+    <p class="small"><strong>Acne types found</strong></p><ul class="clean">${types}</ul>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Zone</th><th>Lesions</th><th class="num">Worst grade</th><th class="num">Factor</th><th class="num">Score</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted small" style="margin-top:8px">${esc(g.note)}</p></div>`;
+}
 function accuracyHtml(rep) {
   const a = rep.accuracy; if (!a) return '';
   return `<details class="outlook"><summary><strong>How accurate is this scan?</strong></summary><p class="small" style="margin-top:8px">Tested on ${a.photos} expert-labelled photos of different people (${esc(a.validation)}): the scan finds about ${Math.round(a.recall * 100)}% of real lesions, about ${Math.round(a.precision * 100)}% of the spots it flags are real,
@@ -223,6 +235,7 @@ function reportHtml(rep, previews = [], { canBook = false } = {}) {
     ${rep.suggest_appointment ? alertBox('info', `A doctor review is suggested.${canBook ? ' <a href="#/appointments">Book an appointment</a>' : ''}`) : ''}
     <div class="bars" aria-label="Spot density by zone">${bars}</div>
     ${finds || stateBox('No clear regional pattern', 'Too few spots were found, or they are spread evenly across the face.')}
+    ${gagsHtml(rep)}
     ${skinOutlookHtml(rep)}
     ${simulatedHtml(rep)}
     ${accuracyHtml(rep)}

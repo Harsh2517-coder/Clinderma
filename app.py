@@ -4,11 +4,11 @@ import base64, hashlib, hmac, json, os, secrets, sqlite3, time
 from datetime import datetime, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-import insights, mailer, reminders, risk_sim
+import acne_lab, gags, insights, mailer, reminders, risk_sim
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 mailer.load_env(os.path.join(HERE, ".env"))       # SMTP settings for real email; without them emails are only logged (dry run)
@@ -144,6 +144,26 @@ async def read_only_when_viewing_as(request: Request, call_next):
     if tok and request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path not in ("/api/view-as/exit", "/api/logout"):
         if read_token(tok)[1]: return JSONResponse({"detail": "Read-only: you are viewing as another user. Return to your admin view to make changes."}, status_code=403)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def acne_lab_login_gate(request: Request, call_next):
+    """The Acne Lab (page and API) is only for signed-in FaceVeda users."""
+    if request.url.path.startswith("/acne-lab") and not read_token(request.cookies.get("session", ""))[0]:
+        return JSONResponse({"detail": "Please log in"}, status_code=401) if request.url.path.startswith("/acne-lab/api") else RedirectResponse("/")
+    return await call_next(request)
+
+
+@app.api_route("/acne-lab/api/{path:path}", methods=["GET", "POST"])
+async def acne_lab_api(path: str, request: Request):
+    """Forwards the Acne Lab's API calls to the prototype backend (photo upload, preprocessing, detection, GAGS)."""
+    import httpx
+    headers = {"content-type": request.headers["content-type"]} if "content-type" in request.headers else {}
+    try:
+        async with httpx.AsyncClient(timeout=180) as c:
+            r = await c.request(request.method, f"{acne_lab.LAB_URL}/api/{path}", params=dict(request.query_params), content=await request.body(), headers=headers)
+    except httpx.HTTPError: raise HTTPException(503, "The Acne Lab engine is not running. Start it with the run script or set ACNE_LAB_DIR in .env.")
+    return Response(r.content, status_code=r.status_code, media_type=r.headers.get("content-type"))
 
 
 class Login(BaseModel): email: str; password: str
@@ -355,13 +375,13 @@ def photo_views(db, scan_ids):
 def run_scan(images, intake):
     """images: {view: BGR image}. Returns (report, parts) where parts = [{view, spots, preview, original}]. Raises 422 if a photo has no usable face."""
     import scan as scanner
-    counts, area, parts = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, []
+    counts, area, parts, typed = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, [], []
     for name, img in images.items():
         s_ = scanner.scan_image(img, None if name == "front" else name)
         if s_["status"] != "ok": raise HTTPException(422, f"{name} photo: {s_['message']}")
         for z in insights.ZONES: counts[z] += s_["zone_counts"][z]; area[z] += s_["zone_area"][z]
-        parts.append({"view": name, "spots": s_["total_spots"], "preview": s_["preview"], "original": img})
-    rep = insights.analyse_zones(counts, intake, area); rep["views"] = list(images); rep["zone_area"] = area; finalize_report(rep, intake, counts, area)
+        parts.append({"view": name, "spots": s_["total_spots"], "preview": s_["preview"], "original": img}); typed.append({"view": name, "zone_types": s_.get("zone_types")})
+    rep = insights.analyse_zones(counts, intake, area); rep["views"] = list(images); rep["zone_area"] = area; rep["gags"] = gags.compute(typed); finalize_report(rep, intake, counts, area)
     return rep, parts
 
 
@@ -747,9 +767,11 @@ def index():
     return FileResponse(p) if os.path.exists(p) else Response("API is running. UI not built yet.", media_type="text/plain")
 
 
+if os.path.isdir(os.path.join(HERE, "static", "acne-lab")): app.mount("/acne-lab", StaticFiles(directory=os.path.join(HERE, "static", "acne-lab"), html=True), name="acne-lab")
 if os.path.isdir(os.path.join(HERE, "static")): app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
 init_db()
 if __name__ == "__main__":
     import uvicorn
+    print(acne_lab.start())
     reminders.start_background(connect, int(os.environ.get("REMINDER_INTERVAL_SECONDS", "600")))      # weekly-scan and appointment emails
     uvicorn.run(app, host="127.0.0.1", port=7890, log_level="warning")

@@ -1,0 +1,40 @@
+{
+ "detector": "onnx:acne_rfdetr_small.onnx",
+ "validation": "held-out photos supplied by the user (139 photos, 634 labelled lesions)",
+ "photos": 139,
+ "filtered": {
+  "recall": 0.743,
+  "precision": 0.324,
+  "agree": 0.604,
+  "top2": 0.833,
+  "kept_per_photo": 13.2
+ },
+ "zones": {
+  "forehead": {
+   "recall": 0.442,
+   "precision": 0.355,
+   "lesions": 104
+  },
+  "left_cheek": {
+   "recall": 0.804,
+   "precision": 0.35,
+   "lesions": 209
+  },
+  "right_cheek": {
+   "recall": 0.79,
+   "precision": 0.317,
+   "lesions": 248
+  },
+  "nose": {
+   "recall": 0.571,
+   "precision": 0.125,
+   "lesions": 7
+  },
+  "chin": {
+   "recall": 0.864,
+   "precision": 0.279,
+   "lesions": 66
+  }
+ },
+ "count_spearman": 0.673
+}

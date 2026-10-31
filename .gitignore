@@ -7,3 +7,6 @@ results/*
 !results/accuracy_by_zone.json
 !results/spot_filter_cv.json
 !results/simulation_results.json
+# the acne detector weights are over GitHub's 100 MB file limit: share them privately
+models/*.onnx
+models/*.pth

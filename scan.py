@@ -117,15 +117,18 @@ def scan_image(img_bgr, side=None):
     if side in ("left", "right"):                                   # profile: the far-side sliver is not a cheek, fold both halves into the visible cheek
         keep, other = f"{side}_cheek", ("right_cheek" if side == "left" else "left_cheek"); zm[keep] = zm[keep] | zm[other]; zm[other] = np.zeros_like(zm[keep])
     cands, proposed, method = find_spots(r, img_bgr, zm0)
-    counts = {z: 0 for z in zm}; area = {z: int(m.sum()) for z, m in zm.items()}; prev = r["crop_original"].copy()
+    counts = {z: 0 for z in zm}; types = {z: {} for z in zm}; area = {z: int(m.sum()) for z, m in zm.items()}; prev = r["crop_original"].copy()
     colors = {"forehead": (214, 160, 50), "nose": (60, 120, 230), "chin": (80, 170, 80), "right_cheek": (170, 90, 190), "left_cheek": (60, 190, 220)}
     for z, m in zm.items(): prev[m] = (prev[m] * 0.78 + np.array(colors[z]) * 0.22).astype(np.uint8)
     t = max(1, min(prev.shape[:2]) // 300)
     for c in cands:
         x0, y0, x1, y1 = c["box"]; cx, cy = (c["core"][0] + c["core"][2]) // 2, (c["core"][1] + c["core"][3]) // 2
         z = next((z for z, m in zm.items() if 0 <= cy < m.shape[0] and 0 <= cx < m.shape[1] and m[cy, cx]), None)
-        if z: counts[z] += 1; cv2.rectangle(prev, (x0, y0), (x1, y1), (255, 255, 255), t + 1); cv2.rectangle(prev, (x0, y0), (x1, y1), colors[z], t)
-    return {"status": "ok", "view": view, "zone_counts": counts, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "preview": prev}
+        if z:
+            counts[z] += 1
+            if c.get("cls"): types[z][c["cls"]] = types[z].get(c["cls"], 0) + 1       # per lesion type (only when a typed detector is plugged in)
+            cv2.rectangle(prev, (x0, y0), (x1, y1), (255, 255, 255), t + 1); cv2.rectangle(prev, (x0, y0), (x1, y1), colors[z], t)
+    return {"status": "ok", "view": view, "zone_counts": counts, "zone_types": types, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "preview": prev}
 
 
 if __name__ == "__main__":      # python3 scan.py photo.jpg [out.jpg]  -> prints zone counts, writes the zone/spot preview
