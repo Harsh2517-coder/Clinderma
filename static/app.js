@@ -182,11 +182,31 @@ function reliabilityHtml(f) {
   return `<p class="small ${r.low ? '' : 'muted'}">${r.low ? '<span class="badge danger">Low reliability in this zone</span> ' : ''}In our test on expert-labelled photos, the scan found about ${Math.round(r.recall * 100)}% of the lesions in this zone, and ${Math.round(r.precision * 100)}% of the spots it flagged were real.${r.low ? ' Please interpret this zone with extra caution.' : ''}</p>`;
 }
 const PHOTO_VIEWS = [['front', 'Front'], ['left', 'Left side'], ['right', 'Right side']];
-function photoGallery(scanId, views) {
+function photoGallery(scanId, views, has3d) {
   if (!views || !views.length) return '<p class="muted small">No photos are stored for this scan.</p>';
   if (me.viewing_as) return '<p class="muted small">Face photos are hidden in admin view.</p>';
-  return `<div class="photo-gallery">${PHOTO_VIEWS.filter(([k]) => views.includes(k)).map(([k, l]) => `<figure><img loading="lazy" src="/api/scans/${scanId}/photo/${k}/annotated" data-sid="${scanId}" data-view="${k}" data-kind="annotated" alt="${l} photo with zones and spots marked">
+  const btn3d = has3d ? `<p style="margin:0 0 12px"><button class="btn btn-secondary btn-sm" type="button" data-face3d="${scanId}">${icon('eye', 'sm')} View 3D face map</button> <span class="muted small">your photos stitched into one face, with each spot placed once</span></p>` : '';
+  return btn3d + `<div class="photo-gallery">${PHOTO_VIEWS.filter(([k]) => views.includes(k)).map(([k, l]) => `<figure><img loading="lazy" src="/api/scans/${scanId}/photo/${k}/annotated" data-sid="${scanId}" data-view="${k}" data-kind="annotated" alt="${l} photo with zones and spots marked">
     <figcaption>${l} · <button class="link-btn small" type="button" data-photo-toggle>show original</button></figcaption></figure>`).join('')}</div>`;
+}
+
+function load3dLibs() {
+  if (window.FaceVeda3D) return Promise.resolve();
+  const add = src => new Promise((ok, bad) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+  return add('/static/vendor/three.min.js').then(() => add('/static/face3d.js'));
+}
+async function open3d(scanId) {
+  const m = modal('3D face map', '<div id="f3d-box"><p class="muted">Building the 3D view...</p></div>', '<button class="btn btn-secondary" data-close>Close</button>'); m.el.querySelector('.modal').classList.add('wide');
+  const box = m.el.querySelector('#f3d-box');
+  try {
+    const [d] = await Promise.all([api(`/scans/${scanId}/face3d`), load3dLibs()]); const s = d.summary || {};
+    box.innerHTML = `<div id="f3d" style="min-height:460px"></div>
+      <p class="small" style="margin:10px 0 4px"><span class="badge success">green</span> seen in 2+ photos &nbsp; <span class="badge progress">amber</span> seen in 1 photo &nbsp; <label><input type="checkbox" id="f3d-dots" checked> show spots</label> <span class="muted">· drag to turn, scroll to zoom, double-click to reset</span></p>
+      <p class="small muted">${s.spots_in_photos} spots in your ${s.photos_fused.length} photos became <strong>${s.unique_spots}</strong> on your face${s.merged ? ` (${s.merged} seen from two angles, counted once)` : ''}.
+      Covered by the photos: ${Object.entries(s.coverage || {}).map(([z, v]) => `${ZONE_LABEL[z] || z} ${Math.round(v * 100)}%`).join(', ')}.${s.photos_not_fused.length ? ` Not used in the 3D map (face not fully visible): ${esc(s.photos_not_fused.join(', '))}.` : ''}
+      The 3D shape is an average face fitted to your photos, so positions are approximate (a few millimetres).</p>`;
+    const h = FaceVeda3D.mount(box.querySelector('#f3d'), d, `/api/scans/${scanId}/face3d/atlas`); $('#f3d-dots', box).onchange = e => h.setSpotsVisible(e.target.checked);
+  } catch (e) { box.innerHTML = `<p class="muted">The 3D face map is not available for this scan.</p>`; }
 }
 function simulatedHtml(rep) {
   const o = rep.simulated_outlook; if (!o) return '';
@@ -292,7 +312,7 @@ function scanPanel(onDone, { canBook = true, requireAll = false } = {}) {
     });
     $('#analyse', root).onclick = async () => {
       $('#serr', root).innerHTML = ''; $('#sres', root).innerHTML = ''; $('#analyse', root).disabled = true; $('#busy', root).hidden = false;
-      try { const r = await api('/patient/scan', { method: 'POST', body: photos }); $('#sres', root).innerHTML = `<hr>${reportHtml(r.report, r.previews, { canBook })}`; me = await api('/me'); const b = $('#scanbanner'); if (b) b.remove(); if (onDone) onDone(r); }
+      try { const r = await api('/patient/scan', { method: 'POST', body: photos }); $('#sres', root).innerHTML = `<hr>${reportHtml(r.report, r.previews, { canBook })}${r.face3d ? `<p style="margin-top:16px"><button class="btn btn-secondary btn-sm" type="button" data-face3d="${r.scan_id}">${icon('eye', 'sm')} View 3D face map</button></p>` : ''}`; me = await api('/me'); const b = $('#scanbanner'); if (b) b.remove(); if (onDone) onDone(r); }
       catch (e) { $('#serr', root).innerHTML = alertBox('error', esc(e.message), 'alert'); }
       finally { $('#busy', root).hidden = true; check(); }
     };
@@ -386,11 +406,11 @@ async function pHome() {
   return { title: `Hello, ${me.name.split(' ')[0]}`, sub: 'Your face wellness overview', actions: '<a class="btn btn-primary" href="#/scan">New face scan</a><a class="btn btn-secondary" href="#/appointments">Book appointment</a>',
     html: `<div class="grid cols-4">${tile('Your doctor', esc(doc ? doc.name : '-'), doc ? doc.specialization : '', 'sm')}${tile('Next appointment', next ? esc(fmtDT(next.start_ts)) : 'None', next ? 'with ' + next.doctor : 'Book one when you like', 'sm')}${tile('Last scan', last ? esc(fmtDate(last.created)) : 'None', '', 'sm')}${tile('Spots found', last ? last.report.total_spots : '-', last ? 'in your last scan' : '')}</div>
     <div class="stack" style="margin-top:24px">${lastNote ? card('Latest note from your doctor', `<div class="note-box">${esc(lastNote.note)}</div><p class="muted small" style="margin-top:8px">${esc(lastNote.doctor)} · ${esc(fmtDate(lastNote.start_ts))}</p>`) : ''}
-    ${last ? card('Your latest scan', reportHtml(last.report, [], { canBook: true }) + `<hr><h3 style="margin-bottom:12px">Photos from this scan</h3>${photoGallery(last.id, last.photos)}`) : card('No scan yet', stateBox('Take your first scan', 'It takes a minute.'))}</div>` };
+    ${last ? card('Your latest scan', reportHtml(last.report, [], { canBook: true }) + `<hr><h3 style="margin-bottom:12px">Photos from this scan</h3>${photoGallery(last.id, last.photos, last.face3d)}`) : card('No scan yet', stateBox('Take your first scan', 'It takes a minute.'))}</div>` };
 }
 async function pScan() {
   const part = scanPanel(null); const scans = await api('/patient/scans');
-  return { title: 'Face scan', sub: 'Find where spots are concentrated on your face', html: card('New scan', part.html) + (scans.length ? `<div style="margin-top:24px">${card('Past scans', `<table class="table"><thead><tr><th>Date</th><th>Spots</th><th>Summary</th><th>Photos</th></tr></thead><tbody>${scans.map(s => `<tr><td>${esc(fmtDate(s.created))}</td><td>${s.report.total_spots}</td><td>${esc(s.report.summary)}</td><td>${s.photos.length ? `<button class="btn btn-secondary btn-sm" data-scan-photos="${s.id}" data-views="${s.photos.join(',')}" data-date="${esc(fmtDate(s.created))}">View photos</button>` : '<span class="muted">-</span>'}</td></tr>`).join('')}</tbody></table>`)}</div>` : ''), mount: r => part.mount(r) };
+  return { title: 'Face scan', sub: 'Find where spots are concentrated on your face', html: card('New scan', part.html) + (scans.length ? `<div style="margin-top:24px">${card('Past scans', `<table class="table"><thead><tr><th>Date</th><th>Spots</th><th>Summary</th><th>Photos</th></tr></thead><tbody>${scans.map(s => `<tr><td>${esc(fmtDate(s.created))}</td><td>${s.report.total_spots}</td><td>${esc(s.report.summary)}</td><td>${s.photos.length ? `<button class="btn btn-secondary btn-sm" data-scan-photos="${s.id}" data-views="${s.photos.join(',')}" data-3d="${s.face3d ? 1 : 0}" data-date="${esc(fmtDate(s.created))}">View photos</button>` : '<span class="muted">-</span>'}</td></tr>`).join('')}</tbody></table>`)}</div>` : ''), mount: r => part.mount(r) };
 }
 async function pAppointments() {
   const [slots, appts] = await Promise.all([api('/slots?days=28'), api('/patient/appointments')]); const days = Object.keys(slots);
@@ -426,7 +446,7 @@ function scanSections(p) {
   if (p.scan_summary) return card('Face scans', `<p>${p.scan_summary.count} scan${p.scan_summary.count === 1 ? '' : 's'}${p.scan_summary.last ? `, the latest on ${esc(fmtDate(p.scan_summary.last))}` : ''}.</p>
     <div class="alert alert-info">${icon('info')}<div>Face photos and scan results are private to the patient and the doctors they have been under. Administrators cannot view them.</div></div>`);
   if (!p.scans || !p.scans.length) return card('Face scan', stateBox('No scan yet', ''));
-  const photos = p.scans.map((s, i) => `<details class="outlook" style="margin-bottom:10px" ${i === 0 ? 'open' : ''}><summary><strong>${esc(fmtDate(s.created))}</strong> · ${s.report.total_spots} spots · ${s.photos.length} photo${s.photos.length === 1 ? '' : 's'}</summary><div style="margin-top:12px">${photoGallery(s.id, s.photos)}</div></details>`).join('');
+  const photos = p.scans.map((s, i) => `<details class="outlook" style="margin-bottom:10px" ${i === 0 ? 'open' : ''}><summary><strong>${esc(fmtDate(s.created))}</strong> · ${s.report.total_spots} spots · ${s.photos.length} photo${s.photos.length === 1 ? '' : 's'}</summary><div style="margin-top:12px">${photoGallery(s.id, s.photos, s.face3d)}</div></details>`).join('');
   return card(`Latest face scan · ${fmtDate(p.scans[0].created)}`, reportHtml(p.scans[0].report)) + card('Face photos (every scan, newest first)', photos);
 }
 function recordHtml(p, { canNote = false } = {}) {
@@ -581,8 +601,9 @@ document.addEventListener('click', e => {
   const p = $('#umenu'); if (p && !p.hidden && !e.target.closest('#usermenu')) { p.hidden = true; $('#umbtn').setAttribute('aria-expanded', 'false'); }
   const t = e.target.closest('[data-photo-toggle]');
   if (t) { const img = t.closest('figure').querySelector('img'), orig = img.dataset.kind === 'annotated'; img.dataset.kind = orig ? 'original' : 'annotated'; img.src = `/api/scans/${img.dataset.sid}/photo/${img.dataset.view}/${img.dataset.kind}`; t.textContent = orig ? 'show spots marked' : 'show original'; }
+  const f3 = e.target.closest('[data-face3d]'); if (f3) open3d(f3.dataset.face3d);
   const rs = e.target.closest('[data-resched]'); if (rs) rescheduleModal(rs.dataset.resched, rs.dataset.when, rs.dataset.who);
-  const b = e.target.closest('[data-scan-photos]'); if (b) modal(`Photos · ${b.dataset.date}`, photoGallery(b.dataset.scanPhotos, b.dataset.views.split(',')), '<button class="btn btn-secondary" data-close>Close</button>').el.querySelector('.modal').classList.add('wide');
+  const b = e.target.closest('[data-scan-photos]'); if (b) modal(`Photos · ${b.dataset.date}`, photoGallery(b.dataset.scanPhotos, b.dataset.views.split(','), b.dataset['3d'] === '1'), '<button class="btn btn-secondary" data-close>Close</button>').el.querySelector('.modal').classList.add('wide');
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { const p = $('#umenu'); if (p && !p.hidden) { p.hidden = true; $('#umbtn').focus(); } } });
 addEventListener('hashchange', route);

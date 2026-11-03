@@ -441,3 +441,67 @@ def test_admin_analytics_is_correct_aggregate_only_and_admin_only(world):
     vals = set(strings(d)); blob = json.dumps(d)
     assert names.isdisjoint(vals) and "report" not in blob and "photo" not in blob and "zone" not in blob      # aggregates only: no patient names/emails, no scan results or photos
     assert login("d1@t.io").get("/api/admin/analytics").status_code == 403 and new_patient("An", "an@t.io").get("/api/admin/analytics").status_code == 403 and client().get("/api/admin/analytics").status_code == 401
+
+
+# ---- face fusion: the same spot seen from two angles is one spot ----
+def _synthetic_view(m, name, yaw_deg, W=1600, H=2000):
+    """A photo of the canonical face turned by yaw_deg, made with the pipeline's own projection (so the test checks the maths, not a detector)."""
+    import numpy as np
+    from face_fusion import fuse as F
+    a = np.radians(-yaw_deg); R = np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]]); s = 900.0; t = np.array([W / 2, H / 2, 0.0])
+    P = s * m["C"] @ R.T + t; lm = P.copy(); lm[:, 0] /= W; lm[:, 1] /= H; lm[:, 2] /= W
+    return F.fit_view(m, name, lm, W, H), (s, R, t)
+
+
+def _spot_on_face(m, tri, proj, bary=(0.3, 0.3, 0.4)):
+    import numpy as np
+    pos = np.array(bary) @ m["C"][m["tris"][tri]]; s, R, t = proj; return pos, (s * pos @ R.T + t)[:2]
+
+
+def test_fusion_merges_one_spot_seen_in_two_photos_and_keeps_distinct_spots_apart():
+    import numpy as np
+    from face_fusion import model as M, fuse as F
+    m = M.load(); front, pf = _synthetic_view(m, "front", 0); left, pl = _synthetic_view(m, "left", -35); assert abs(left.yaw - (-35)) < 3 and abs(front.yaw) < 3
+    cand = [i for i in range(len(m["tris"])) if m["tri_zone"][i] == "left_cheek" and m["tri_skin"][i] and front.vis[i] > 0.6 and left.vis[i] > 0.6]; cheek = []
+    for i in cand:                                                                                  # well separated spots (a spot's neighbours within 0.04 would merge by design)
+        if all(np.linalg.norm(m["C"][m["tris"][i]].mean(0) - m["C"][m["tris"][j]].mean(0)) > 0.1 for j in cheek): cheek.append(i)
+    assert len(cheek) >= 4
+    for k, ti in enumerate(cheek):
+        pos, xf = _spot_on_face(m, ti, pf); _, xl = _spot_on_face(m, ti, pl)
+        front.spots.append({"x": xf[0], "y": xf[1], "zone": "left_cheek"}); left.spots.append({"x": xl[0], "y": xl[1], "zone": "left_cheek"})
+    front.spots.append({"x": front.P[1][0], "y": front.P[1][1] - 400, "zone": "forehead"})                  # a spot only the front photo can see
+    res = F.fuse(m, [front, left]); assert res["raw_total"] == 2 * len(cheek) + 1 and res["unique_total"] == len(cheek) + 1 and res["merged"] == len(cheek)
+    assert sum(1 for s in res["spots"] if s["n_views"] == 2) == len(cheek)
+    for s in res["spots"]:
+        if s["n_views"] == 2: assert s["zone"] == "left_cheek"
+    # two different spots in the two photos stay two spots
+    left.spots = [{"x": left.spots[0]["x"] + 0.0, "y": left.spots[0]["y"] + 0.0}]; front.spots = [front.spots[-1]]                                                              # the forehead spot
+    assert F.fuse(m, [front, left])["unique_total"] == 2
+    # views with no spots, and a single view, do not crash
+    front.spots = []; left.spots = []; assert F.fuse(m, [front, left])["unique_total"] == 0 and F.fuse(m, [front])["unique_total"] == 0
+
+
+def test_fusion_coverage_says_which_zones_the_photos_did_not_see():
+    from face_fusion import model as M, fuse as F
+    m = M.load(); front, _ = _synthetic_view(m, "front", 0); left, _ = _synthetic_view(m, "left", -50)
+    one = F.fuse(m, [front])["coverage_one_view"]; two = F.fuse(m, [front, left])
+    assert one["forehead"] > 0.9 and two["coverage_one_view"]["left_cheek"] >= one["left_cheek"] and two["coverage_two_views"]["left_cheek"] > 0.2
+
+
+def test_scan_falls_back_to_summed_counts_when_fusion_is_unavailable(world, monkeypatch):
+    p = new_patient("Fb", "fb@t.io"); sid = _scan_with_photos(p, monkeypatch); monkeypatch.setattr(A, "fuse_views", lambda images, spots: None)
+    rep = p.get("/api/patient/scans").json()[0]["report"]; assert rep["fusion"] == {"used": False} and not A.has_face3d(sid)
+
+
+def test_3d_face_map_follows_the_photo_privacy_rules(world, monkeypatch):
+    import numpy as np
+    p = new_patient("F3d", "f3d@t.io"); pick(p, world["d1"]); sid = _scan_with_photos(p, monkeypatch); pid = p.get("/api/me").json()["id"]
+    A.save_face3d(sid, {"data": {"vertices": [0, 0, 0], "tris": [], "uv": [0, 0], "spots": [], "summary": {"used": True}}, "atlas": np.full((8, 8, 3), 120, np.uint8)})
+    url, aurl = f"/api/scans/{sid}/face3d", f"/api/scans/{sid}/face3d/atlas"
+    r = p.get(url); assert r.status_code == 200 and r.headers["cache-control"] == "private, no-store" and r.json()["summary"]["used"] is True
+    assert p.get(aurl).status_code == 200 and p.get(aurl).content[:2] == b"\xff\xd8" and oct(os.stat(os.path.join(A.FACE3D_DIR, f"{sid}.jpg")).st_mode)[-3:] == "600"
+    d1, d2, ad = login("d1@t.io"), login("d2@t.io"), login("admin@t.io")
+    assert d1.get(url).status_code == 200 and d2.get(url).status_code == 404 and ad.get(url).status_code == 403 and ad.get(aurl).status_code == 403
+    assert client().get(url).status_code == 401 and new_patient("O3", "o3@t.io").get(url).status_code == 404 and p.get(f"/api/scans/{sid + 999}/face3d").status_code == 404
+    assert p.get("/api/patient/scans").json()[0]["face3d"] is True and d1.get(f"/api/doctor/patients/{pid}").json()["scans"][0]["face3d"] is True
+    ad.post("/api/admin/view-as", json={"user_id": pid}); assert ad.get(url).status_code == 403                                      # an admin previewing as the patient still cannot

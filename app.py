@@ -17,6 +17,7 @@ DB_PATH = os.environ.get("WELLNESS_DB", os.path.join(HERE, "data", "platform.db"
 SESSION_SECONDS = 8 * 3600
 VIEW_AS_SECONDS = 2 * 3600          # an admin "view as" session is shorter and read-only
 PHOTO_DIR = os.path.join(os.path.dirname(DB_PATH), "scan_photos")
+FACE3D_DIR = os.path.join(os.path.dirname(DB_PATH), "scan_3d")           # per scan: <id>.json (mesh + unique spots + summary) and <id>.jpg (stitched face texture): face images, same privacy as the photos
 BOOKING_WINDOW_DAYS = 60
 
 SCHEMA = """
@@ -352,17 +353,60 @@ def photo_views(db, scan_ids):
     return out
 
 
+def fuse_views(images, spots):
+    """Maps the spots of every photo onto one shared face model and merges the ones seen from two angles (face_fusion). Returns None when it cannot be used (no face mesh library,
+    fewer than two photos with a fitted face): the caller then simply adds up the per-photo counts as before."""
+    try:
+        from face_fusion import landmarks as LM, pipeline, atlas, export_view
+        if not LM.available(): return None
+        out = pipeline.fuse_photos(images, spots)
+        if not out["result"] or len(out["views"]) < 2: return None
+        views, m, res = out["views"], out["model"], out["result"]
+        at, _, _ = atlas.stitch(m, views, images)
+        return {"views": views, "skipped": out["skipped"], "result": res, "data": export_view.face3d_data(m, res), "atlas": at}
+    except Exception as e:                    # fusion is an extra: a failure must never block a scan
+        print("face fusion skipped:", type(e).__name__, e); return None
+
+
 def run_scan(images, intake):
-    """images: {view: BGR image}. Returns (report, parts) where parts = [{view, spots, preview, original}]. Raises 422 if a photo has no usable face."""
+    """images: {view: BGR image}. Returns (report, parts) where parts = [{view, spots, preview, original}]. Raises 422 if a photo has no usable face.
+    The spots of all photos are put on one face model and duplicates (the same spot seen from two angles) are counted once; if that is not possible the per-photo counts are added up."""
     import scan as scanner
-    counts, area, parts = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, []
+    counts, area, parts, per_spots = {z: 0 for z in insights.ZONES}, {z: 0 for z in insights.ZONES}, [], {}
+    per_counts = {}
     for name, img in images.items():
         s_ = scanner.scan_image(img, None if name == "front" else name)
         if s_["status"] != "ok": raise HTTPException(422, f"{name} photo: {s_['message']}")
+        per_counts[name] = s_["zone_counts"]; per_spots[name] = s_.get("spots", [])
         for z in insights.ZONES: counts[z] += s_["zone_counts"][z]; area[z] += s_["zone_area"][z]
         parts.append({"view": name, "spots": s_["total_spots"], "preview": s_["preview"], "original": img})
-    rep = insights.analyse_zones(counts, intake, area); rep["views"] = list(images); rep["zone_area"] = area; finalize_report(rep, intake, counts, area)
+    fz = fuse_views(images, per_spots) if len(images) >= 2 else None; fusion = {"used": False}
+    if fz:
+        res = fz["result"]; fused_names = {v.name for v in fz["views"]}
+        counts = {z: 0 for z in insights.ZONES}
+        for sp in res["spots"]:
+            if sp.get("orig_zone") in counts: counts[sp["orig_zone"]] += 1
+        for name in images:
+            if name not in fused_names:
+                for z in insights.ZONES: counts[z] += per_counts[name][z]
+        fusion = {"used": True, "photos_fused": sorted(fused_names), "photos_not_fused": fz["skipped"], "spots_in_photos": res["raw_total"], "unique_spots": res["unique_total"], "merged": res["merged"],
+                  "coverage": {z: round(res["coverage_one_view"][z], 2) for z in res["coverage_one_view"]}, "coverage_two_angles": {z: round(res["coverage_two_views"][z], 2) for z in res["coverage_two_views"]},
+                  "head_angles": {v["name"]: v["yaw"] for v in res["views"]}}
+    rep = insights.analyse_zones(counts, intake, area); rep["views"] = list(images); rep["zone_area"] = area; rep["fusion"] = fusion; finalize_report(rep, intake, counts, area)
+    if fz: rep["_face3d"] = {"data": {**fz["data"], "summary": fusion}, "atlas": fz["atlas"]}
     return rep, parts
+
+
+def save_face3d(sid, f3):
+    """Stores the 3D face map of a scan (owner-only file permissions; read only through scan_face3d* below)."""
+    import cv2
+    os.makedirs(FACE3D_DIR, mode=0o700, exist_ok=True); base = os.path.join(FACE3D_DIR, str(sid))
+    for p, blob in ((base + ".json", json.dumps(f3["data"]).encode()), (base + ".jpg", cv2.imencode(".jpg", f3["atlas"], [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes())):
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as fh: fh.write(blob)
+
+
+def has_face3d(sid): return os.path.exists(os.path.join(FACE3D_DIR, f"{sid}.json"))
 
 
 @app.post("/api/patient/scan")
@@ -372,13 +416,20 @@ def scan(b: ScanReq, u=Depends(need("patient")), db=Depends(get_db)):
     if "front" not in views: raise HTTPException(422, "A front photo is required")
     first = db.execute("SELECT COUNT(*) FROM scans WHERE patient_id=?", (u["id"],)).fetchone()[0] == 0
     if first and len(views) < 3: raise HTTPException(422, "Your first scan needs all three angles: front, left side and right side")
-    rep, parts = run_scan({k: _decode_image(v) for k, v in views.items()}, _intake(db, u["id"]))
+    rep, parts = run_scan({k: _decode_image(v) for k, v in views.items()}, _intake(db, u["id"])); f3 = rep.pop("_face3d", None)
     cur = db.execute("INSERT INTO scans(patient_id, created, report_json) VALUES(?,?,?)", (u["id"], datetime.now().isoformat(timespec="seconds"), json.dumps(rep))); sid = cur.lastrowid
+    if f3: save_face3d(sid, f3)
     previews = []
     for p in parts:
         ann = _jpeg(p["preview"], 1000, 80); save_photo(db, sid, p["view"], "original", _jpeg(p["original"], 1400, 85)); save_photo(db, sid, p["view"], "annotated", ann)
         previews.append({"view": p["view"], "spots": p["spots"], "image": "data:image/jpeg;base64," + base64.b64encode(ann).decode()})
-    db.commit(); return {"scan_id": sid, "report": rep, "previews": previews}
+    db.commit(); return {"scan_id": sid, "report": rep, "previews": previews, "face3d": bool(f3)}
+
+
+def _may_view_scan(u, patient_id, db):
+    """Face images of a scan: the patient who took it and every doctor that patient has had. Never admins, including an admin viewing as someone else."""
+    if u.get("via") or u["role"] == "admin": raise HTTPException(403, "Face photos are private to the patient and their doctors")
+    return (u["role"] == "patient" and u["id"] == patient_id) or (u["role"] == "doctor" and db.execute("SELECT 1 FROM patient_doctors WHERE patient_id=? AND doctor_id=?", (patient_id, u["id"])).fetchone() is not None)
 
 
 @app.get("/api/scans/{sid}/photo/{view}/{kind}")
@@ -386,16 +437,32 @@ def scan_photo(sid: int, view: str, kind: str, u=Depends(current_user), db=Depen
     """A stored face photo. Allowed for the patient who took it and for every doctor that patient has had. Never for admins, including an admin viewing as someone else."""
     if u.get("via") or u["role"] == "admin": raise HTTPException(403, "Face photos are private to the patient and their doctors")
     row = db.execute("SELECT s.patient_id, ph.sha FROM scans s JOIN scan_photos ph ON ph.scan_id=s.id WHERE s.id=? AND ph.view=? AND ph.kind=?", (sid, view, kind)).fetchone()
-    if not row: raise HTTPException(404, "Not found")
-    ok = (u["role"] == "patient" and u["id"] == row["patient_id"]) or (u["role"] == "doctor" and db.execute("SELECT 1 FROM patient_doctors WHERE patient_id=? AND doctor_id=?", (row["patient_id"], u["id"])).fetchone())
-    if not ok: raise HTTPException(404, "Not found")
+    if not row or not _may_view_scan(u, row["patient_id"], db): raise HTTPException(404, "Not found")
     return FileResponse(os.path.join(PHOTO_DIR, row["sha"][:2], row["sha"] + ".jpg"), media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+def _face3d_file(sid, ext, u, db):
+    if u.get("via") or u["role"] == "admin": raise HTTPException(403, "Face photos are private to the patient and their doctors")
+    row = db.execute("SELECT patient_id FROM scans WHERE id=?", (sid,)).fetchone(); p = os.path.join(FACE3D_DIR, f"{sid}.{ext}")
+    if not row or not _may_view_scan(u, row["patient_id"], db) or not os.path.exists(p): raise HTTPException(404, "Not found")
+    return p
+
+
+@app.get("/api/scans/{sid}/face3d")
+def scan_face3d(sid: int, u=Depends(current_user), db=Depends(get_db)):
+    """The 3D face map of a scan: shared face mesh, unique spots on it, and what the fusion did. Same access rules as the photos."""
+    return FileResponse(_face3d_file(sid, "json", u, db), media_type="application/json", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/scans/{sid}/face3d/atlas")
+def scan_face3d_atlas(sid: int, u=Depends(current_user), db=Depends(get_db)):
+    return FileResponse(_face3d_file(sid, "jpg", u, db), media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/patient/scans")
 def my_scans(u=Depends(need("patient")), db=Depends(get_db)):
     rows = db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (u["id"],)).fetchall(); pv = photo_views(db, [r["id"] for r in rows])
-    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "report": json.loads(r["report_json"])} for r in rows]
+    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "face3d": has_face3d(r["id"]), "report": json.loads(r["report_json"])} for r in rows]
 
 
 @app.get("/api/patient/progress")
@@ -545,7 +612,7 @@ def doctor_summary(u=Depends(need("doctor")), db=Depends(get_db)):
 
 def _scans_with_photos(db, pid):
     rows = db.execute("SELECT * FROM scans WHERE patient_id=? ORDER BY id DESC", (pid,)).fetchall(); pv = photo_views(db, [r["id"] for r in rows])
-    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "report": json.loads(r["report_json"])} for r in rows]
+    return [{"id": r["id"], "created": r["created"], "photos": pv[r["id"]], "face3d": has_face3d(r["id"]), "report": json.loads(r["report_json"])} for r in rows]
 
 
 @app.get("/api/doctor/patients/{pid}")

@@ -3,6 +3,8 @@
 Three-level SaaS (admin -> doctor -> patient). Patients scan their face (front, left, right) weekly; the scan splits the face into five zones and counts spots per zone; zones are linked to body areas using
 **Ayurveda and Traditional Chinese Medicine face maps, shown as traditional and unproven, never as a diagnosis**. Doctors get weekly availability charts, patient records and notes; admins get everything plus a master calendar.
 
+**3D face map (three photos on one face):** see [face_fusion/README.md](face_fusion/README.md). Needs a small extra Python environment for MediaPipe (see its Setup); without it scans still work and are counted per photo.
+
 **Integrating the friend's acne detector:** see [HANDOFF_TANAYA.md](HANDOFF_TANAYA.md) and [DETECTOR_INTEGRATION.md](DETECTOR_INTEGRATION.md).
 
 **Watch the overview:** [docs/faceveda_overview.mp4](docs/faceveda_overview.mp4) (about 3 minutes, captioned) | narration script: [docs/video_script.md](docs/video_script.md) | screenshots: [docs/screenshots/](docs/screenshots/)

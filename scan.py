@@ -120,12 +120,12 @@ def scan_image(img_bgr, side=None):
     counts = {z: 0 for z in zm}; area = {z: int(m.sum()) for z, m in zm.items()}; prev = r["crop_original"].copy()
     colors = {"forehead": (214, 160, 50), "nose": (60, 120, 230), "chin": (80, 170, 80), "right_cheek": (170, 90, 190), "left_cheek": (60, 190, 220)}
     for z, m in zm.items(): prev[m] = (prev[m] * 0.78 + np.array(colors[z]) * 0.22).astype(np.uint8)
-    t = max(1, min(prev.shape[:2]) // 300)
+    t = max(1, min(prev.shape[:2]) // 300); spots = []; ox, oy = r["crop_box"][:2]                   # spots: centre + box in the ORIGINAL photo's pixels (the crop is at full scale)
     for c in cands:
         x0, y0, x1, y1 = c["box"]; cx, cy = (c["core"][0] + c["core"][2]) // 2, (c["core"][1] + c["core"][3]) // 2
         z = next((z for z, m in zm.items() if 0 <= cy < m.shape[0] and 0 <= cx < m.shape[1] and m[cy, cx]), None)
-        if z: counts[z] += 1; cv2.rectangle(prev, (x0, y0), (x1, y1), (255, 255, 255), t + 1); cv2.rectangle(prev, (x0, y0), (x1, y1), colors[z], t)
-    return {"status": "ok", "view": view, "zone_counts": counts, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "preview": prev}
+        if z: counts[z] += 1; spots.append({"x": cx + ox, "y": cy + oy, "w": x1 - x0, "h": y1 - y0, "zone": z, "conf": float(c.get("conf", c.get("score", 0)))}); cv2.rectangle(prev, (x0, y0), (x1, y1), (255, 255, 255), t + 1); cv2.rectangle(prev, (x0, y0), (x1, y1), colors[z], t)
+    return {"status": "ok", "view": view, "zone_counts": counts, "zone_area": area, "total_spots": sum(counts.values()), "skin_fallback": bool(r.get("skin_fallback")), "method": method, "filtered": method.startswith("built-in"), "proposed": proposed, "spots": spots, "preview": prev}
 
 
 if __name__ == "__main__":      # python3 scan.py photo.jpg [out.jpg]  -> prints zone counts, writes the zone/spot preview
