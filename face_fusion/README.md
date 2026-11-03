@@ -24,6 +24,8 @@ python3.12 -m venv ../facefusion_venv && ../facefusion_venv/bin/pip install "med
 `FACEFUSION_PYTHON=/path/to/python` points to another interpreter. `models/face_landmarker.task` is Google's MediaPipe model (Apache-2.0). Everything else needs only numpy, scipy and OpenCV.
 
 ## Use
+**Simplest: a local page.** `python3 face_fusion/server.py`, open http://localhost:7891, choose 2-3 photos of one face, press Build. No login, nothing is stored. (In the Claude app the launch entry is `face-3d-map`.)
+
 ```bash
 python3 -m face_fusion.cli front.jpg left.jpg right.jpg --out out/          # writes atlas.jpg, face3d.html (open it, drag to turn), fused_spots.json
 python3 -m face_fusion.cli *.jpg --spots my_spots.json --out out/           # use your own detector's spots: {"front.jpg": [{"x": px, "y": px}, ...], ...}
