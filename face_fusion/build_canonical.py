@@ -17,7 +17,7 @@ tris = M.edges_to_triangles(set(tuple(sorted(e)) for e in c.FACEMESH_TESSELATION
 regions = {"eyes": ids(c.FACEMESH_LEFT_EYE) + ids(c.FACEMESH_RIGHT_EYE), "lips": ids(c.FACEMESH_LIPS), "irises": ids(c.FACEMESH_IRISES),
            "brows": ids(c.FACEMESH_LEFT_EYEBROW) + ids(c.FACEMESH_RIGHT_EYEBROW), "nose": ids(c.FACEMESH_NOSE)}
 d = M.build(samples, tris, regions); d["regions"] = np.array(json.dumps(regions))
-zone, skin, area = M.zones_of_triangles(d["C"], d["tris"], regions); d["tri_zone"] = zone; d["tri_skin"] = skin; d["tri_area"] = area
-print("triangles:", len(d["tris"]), "| mirror partner is an exact involution for", round(d["involution"] * 100, 1), "% of landmarks")
+zone, skin, area = M.zones_of_triangles(d["C"], d["tris"], regions, int(d["n_mesh_tris"])); d["tri_zone"] = zone; d["tri_skin"] = skin; d["tri_area"] = area
+print("triangles:", len(d["tris"]), "(of which", len(d["tris"]) - int(d["n_mesh_tris"]), "close the eyes/mouth/nostrils)", "| mirror partner is an exact involution for", round(d["involution"] * 100, 1), "% of landmarks")
 print("zone surface share (skin only):", {z: round(float(area[(zone == z) & skin].sum() / area[skin].sum()), 3) for z in M.ZONES})
 M.save(d); print("saved", M.PATH)

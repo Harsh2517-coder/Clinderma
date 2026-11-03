@@ -200,12 +200,16 @@ async function open3d(scanId) {
   const box = m.el.querySelector('#f3d-box');
   try {
     const [d] = await Promise.all([api(`/scans/${scanId}/face3d`), load3dLibs()]); const s = d.summary || {};
-    box.innerHTML = `<div id="f3d" style="min-height:460px"></div>
-      <p class="small" style="margin:10px 0 4px"><span class="badge success">green</span> seen in 2+ photos &nbsp; <span class="badge progress">amber</span> seen in 1 photo &nbsp; <label><input type="checkbox" id="f3d-dots" checked> show spots</label> <span class="muted">· drag to turn, scroll to zoom, double-click to reset</span></p>
+    box.innerHTML = `<p style="margin:0 0 8px"><button class="btn btn-secondary btn-sm" type="button" id="f3d-tab3">3D face</button> <button class="btn btn-secondary btn-sm" type="button" id="f3d-tabf">Flat texture (full detail)</button></p>
+      <div id="f3d" style="min-height:560px"></div><div id="f3d-flat" style="min-height:560px;display:none"></div>
+      <p class="small" style="margin:10px 0 4px"><span class="badge success">green</span> seen in 2+ photos &nbsp; <span class="badge progress">amber</span> seen in 1 photo &nbsp; <label><input type="checkbox" id="f3d-dots" checked> show spots</label> <span class="muted">· drag, scroll to zoom, double-click to reset</span></p>
       <p class="small muted">${s.spots_in_photos} spots in your ${s.photos_fused.length} photos became <strong>${s.unique_spots}</strong> on your face${s.merged ? ` (${s.merged} seen from two angles, counted once)` : ''}.
       Covered by the photos: ${Object.entries(s.coverage || {}).map(([z, v]) => `${ZONE_LABEL[z] || z} ${Math.round(v * 100)}%`).join(', ')}.${s.photos_not_fused.length ? ` Not used in the 3D map (face not fully visible): ${esc(s.photos_not_fused.join(', '))}.` : ''}
-      The 3D shape is an average face fitted to your photos, so positions are approximate (a few millimetres).</p>`;
-    const h = FaceVeda3D.mount(box.querySelector('#f3d'), d, `/api/scans/${scanId}/face3d/atlas`); $('#f3d-dots', box).onchange = e => h.setSpotsVisible(e.target.checked);
+      The 3D shape is an average face fitted to your photos, so positions are approximate (a few millimetres). Use the flat texture to look closely at a spot.</p>`;
+    const url = `/api/scans/${scanId}/face3d/atlas`; const h3 = FaceVeda3D.mount(box.querySelector('#f3d'), d, url, { height: 560 }); let hf = null;
+    const dots = $('#f3d-dots', box); dots.onchange = e => { h3.setSpotsVisible(e.target.checked); if (hf) hf.setSpotsVisible(e.target.checked); };
+    $('#f3d-tab3', box).onclick = () => { $('#f3d', box).style.display = ''; $('#f3d-flat', box).style.display = 'none'; h3.render(); };
+    $('#f3d-tabf', box).onclick = () => { $('#f3d', box).style.display = 'none'; const fl = $('#f3d-flat', box); fl.style.display = ''; if (!hf) { hf = FaceVeda3D.mountFlat(fl, d, url, { height: 560 }); hf.setSpotsVisible(dots.checked); } };
   } catch (e) { box.innerHTML = `<p class="muted">The 3D face map is not available for this scan.</p>`; }
 }
 function simulatedHtml(rep) {

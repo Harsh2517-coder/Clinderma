@@ -362,7 +362,7 @@ def fuse_views(images, spots):
         out = pipeline.fuse_photos(images, spots)
         if not out["result"] or len(out["views"]) < 2: return None
         views, m, res = out["views"], out["model"], out["result"]
-        at, _, _ = atlas.stitch(m, views, images)
+        at, _, _ = atlas.stitch(m, views, images, int(os.environ.get("FACE3D_ATLAS", 2048)))
         return {"views": views, "skipped": out["skipped"], "result": res, "data": export_view.face3d_data(m, res), "atlas": at}
     except Exception as e:                    # fusion is an extra: a failure must never block a scan
         print("face fusion skipped:", type(e).__name__, e); return None

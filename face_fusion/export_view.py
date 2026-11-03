@@ -8,7 +8,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 def face3d_data(m, result):
     """JSON for static/face3d.js: the shared mesh, the unique spots on it (position, zone, how many photos saw them)."""
     return {"vertices": np.round(m["C"], 4).ravel().tolist(), "tris": m["tris"].ravel().tolist(), "uv": np.round(m["uv"], 4).ravel().tolist(),
-            "spots": [{"p": [round(c, 4) for c in s["pos"]], "zone": s["zone"], "n": s["n_views"]} for s in result["spots"] if s["pos"]]}
+            "spots": [{"p": [round(c, 4) for c in s["pos"]], "uv": [round(c, 4) for c in s["uv"]], "zone": s["zone"], "n": s["n_views"]} for s in result["spots"] if s["pos"]]}
 
 
 def write_html(path, data, atlas_bgr, title="Face map"):

@@ -9,12 +9,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from face_fusion import atlas, export_view, fuse as F, pipeline
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); app = FastAPI()
-PAGE = """<!doctype html><meta charset=utf-8><title>3D face map</title><style>body{font:15px system-ui;max-width:760px;margin:20px auto;padding:0 14px}
+PAGE = """<!doctype html><meta charset=utf-8><title>3D face map</title><style>body{font:15px system-ui;max-width:980px;margin:20px auto;padding:0 14px}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row label{flex:1;min-width:200px;border:1px dashed #999;padding:10px;border-radius:8px}button{padding:10px 18px;font-size:15px}
-#msg{margin:12px 0;color:#444}#v{min-height:470px}</style>
+#msg{margin:12px 0;color:#444}#v,#flat{min-height:600px}</style>
 <h2>3D face map</h2><p>Upload 2-3 photos of the same face (front, left side, right side). The spots are found in each photo, placed on one 3D face and merged when two photos show the same spot.</p>
 <div class=row><label>Photo 1<br><input type=file accept="image/*" id=f1></label><label>Photo 2<br><input type=file accept="image/*" id=f2></label><label>Photo 3 (optional)<br><input type=file accept="image/*" id=f3></label></div>
-<p><label><input type=checkbox id=det checked> find spots (uncheck to only build the 3D face)</label></p><button id=go>Build 3D map</button><div id=msg></div><div id=v></div><pre id=sum style="white-space:pre-wrap"></pre>
+<p><label><input type=checkbox id=det checked> find spots (uncheck to only build the 3D face)</label></p><button id=go>Build 3D map</button><div id=msg></div><div id=v></div><h3>Flat texture (full resolution: drag to move, scroll to zoom)</h3><div id=flat></div><p><a id=dl download="face_texture.jpg">Download the full-resolution texture</a></p><pre id=sum style="white-space:pre-wrap"></pre>
 <script src="/three.js"></script><script src="/face3d.js"></script><script>
 const rd=f=>new Promise(r=>{const x=new FileReader();x.onload=()=>r(x.result);x.readAsDataURL(f)});
 document.getElementById('go').onclick=async()=>{const msg=document.getElementById('msg'),fs=['f1','f2','f3'].map(i=>document.getElementById(i).files[0]).filter(Boolean);
@@ -24,7 +24,7 @@ document.getElementById('go').onclick=async()=>{const msg=document.getElementByI
  const r=await fetch('/api/fuse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
  if(!r.ok){msg.textContent='Error: '+(j.detail||r.status);return}
  msg.textContent='Done. Drag to turn, scroll to zoom, double-click to reset. Green dots = seen in 2+ photos, amber = seen in 1.';
- FaceVeda3D.mount(document.getElementById('v'),j.data,j.atlas);document.getElementById('sum').textContent=JSON.stringify(j.summary,null,1)};
+ FaceVeda3D.mount(document.getElementById('v'),j.data,j.atlas);document.getElementById('flat').innerHTML='';FaceVeda3D.mountFlat(document.getElementById('flat'),j.data,j.atlas);document.getElementById('dl').href=j.atlas;document.getElementById('sum').textContent=JSON.stringify(j.summary,null,1)};
 </script>"""
 
 
@@ -59,7 +59,7 @@ def fuse_api(b: Req):
             s = scan.scan_image(im); spots[n] = s["spots"] if s["status"] == "ok" else []
     out = pipeline.fuse_photos(images, spots); res = out["result"]
     if not res or len(out["views"]) < 2: raise HTTPException(422, "A face mesh could be fitted in fewer than 2 photos (90-degree profiles and close-ups cannot be used). Fitted: " + ", ".join(v.name for v in out["views"]))
-    at, _, _ = atlas.stitch(out["model"], out["views"], images); jpg = cv2.imencode(".jpg", at, [cv2.IMWRITE_JPEG_QUALITY, 88])[1].tobytes()
+    at, _, _ = atlas.stitch(out["model"], out["views"], images, int(os.environ.get("ATLAS_SIZE", 3072))); jpg = cv2.imencode(".jpg", at, [cv2.IMWRITE_JPEG_QUALITY, 93])[1].tobytes()
     summary = {"photos_used": [v.name for v in out["views"]], "head_angles_deg": {v["name"]: v["yaw"] for v in res["views"]}, "photos_not_usable": out["skipped"], "spots_in_photos": res["raw_total"],
                "unique_spots": res["unique_total"], "merged_duplicates": res["merged"], "spots_per_zone": res["zone_counts"], "area_seen_by_one_photo": {z: round(v, 2) for z, v in res["coverage_one_view"].items()},
                "area_seen_by_two_photos": {z: round(v, 2) for z, v in res["coverage_two_views"].items()}}

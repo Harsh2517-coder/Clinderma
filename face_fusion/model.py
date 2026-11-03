@@ -60,7 +60,49 @@ def build(samples, tris, regions, iters=5):
         if len(ts) > 2:                                                     # three triangles on one edge: drop the one whose far vertex lies farthest from the edge
             far = [np.linalg.norm(C[[v for v in tri[ti] if v not in e][0]] - (C[e[0]] + C[e[1]]) / 2) for ti in ts]; drop.add(ts[int(np.argmax(far))])
     keep = [i for i in range(len(tri)) if i not in drop]; tri = tri[keep]
-    return {"C": C, "tris": tri, "perm": perm, "involution": involution}
+    holes = fill_holes(C, tri, head); n_skin = len(tri); tri = np.vstack([tri, holes]) if len(holes) else tri
+    return {"C": C, "tris": tri, "perm": perm, "involution": involution, "n_mesh_tris": np.array(n_skin)}
+
+
+def fill_holes(C, tri, head):
+    """The MediaPipe mesh has openings (eyes, mouth, nostrils). Close every inner boundary loop by ear clipping so the 3D face has no gaps; these extra triangles come last in `tris`
+    (indices >= n_mesh_tris) and are never used to place spots."""
+    use = {}
+    for t in tri:
+        for a, b in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0])): use.setdefault(tuple(sorted((a, b))), []).append((a, b))
+    nxt = {}
+    for e, d in use.items():
+        if len(d) == 1: nxt.setdefault(d[0][0], []).append(d[0][1])
+    loops, seen = [], set()
+    for a0 in list(nxt):
+        if a0 in seen: continue
+        loop, a = [a0], a0
+        while True:
+            seen.add(a); b = nxt.get(a, [None])[0]
+            if b is None or b == a0 or b in seen: break
+            loop.append(b); a = b
+        if len(loop) >= 3: loops.append(loop)
+    if not loops: return np.zeros((0, 3), int)
+    per = lambda l: sum(np.linalg.norm(C[l[i]] - C[l[(i + 1) % len(l)]]) for i in range(len(l))); outer = max(loops, key=per); out = []
+    for loop in loops:
+        if loop is outer: continue
+        idx = list(loop); xy = C[:, :2]
+        area = sum(xy[idx[i], 0] * xy[idx[(i + 1) % len(idx)], 1] - xy[idx[(i + 1) % len(idx)], 0] * xy[idx[i], 1] for i in range(len(idx)))
+        if area < 0: idx = idx[::-1]
+        guard = 0
+        while len(idx) > 3 and guard < 500:
+            guard += 1; n = len(idx)
+            for k in range(n):
+                a, b, c = idx[k - 1], idx[k], idx[(k + 1) % n]; cr = (xy[b, 0] - xy[a, 0]) * (xy[c, 1] - xy[a, 1]) - (xy[b, 1] - xy[a, 1]) * (xy[c, 0] - xy[a, 0])
+                if cr <= 0: continue
+                inside = any(p not in (a, b, c) and all(((xy[q2, 0] - xy[q1, 0]) * (xy[p, 1] - xy[q1, 1]) - (xy[q2, 1] - xy[q1, 1]) * (xy[p, 0] - xy[q1, 0])) >= 0 for q1, q2 in ((a, b), (b, c), (c, a))) for p in idx)
+                if not inside: out.append((a, b, c)); idx.pop(k); break
+            else: break
+        if len(idx) == 3: out.append(tuple(idx))
+    out = np.array(out, int).reshape(-1, 3)
+    if len(out):
+        n = np.cross(C[out[:, 1]] - C[out[:, 0]], C[out[:, 2]] - C[out[:, 0]]); f = (n * (C[out].mean(1) - head)).sum(1) < 0; out[f] = out[f][:, [0, 2, 1]]
+    return out
 
 
 def cylinder(C):
@@ -70,7 +112,7 @@ def cylinder(C):
     y0, y1 = C[:, 1].min() - 0.02, C[:, 1].max() + 0.02; return np.stack([u, (C[:, 1] - y0) / (y1 - y0)], 1), (z_axis, y0, y1)
 
 
-def zones_of_triangles(C, tris, regions):
+def zones_of_triangles(C, tris, regions, n_mesh=None):
     """Zone of every triangle (forehead above the brows, chin below the lips, nose = a polygon over the nose bridge and wings, cheeks left/right of the middle) and whether it is
     skin (not eye opening / lip). 'left_cheek' is the person's LEFT cheek, i.e. image-right in a frontal photo, matching scan.py."""
     import cv2
@@ -80,6 +122,7 @@ def zones_of_triangles(C, tris, regions):
     in_nose = np.array([cv2.pointPolygonTest(poly.reshape(-1, 1, 2), (float(c[0] * 1000), float(c[1] * 1000)), False) >= 0 for c in cen])
     eyes_lips = set(regions["eyes"]) | set(regions["lips"]) | set(regions["irises"])
     skin = ~np.array([all(v in eyes_lips for v in t) for t in tris])
+    if n_mesh is not None: skin[n_mesh:] = False
     zone = np.where(in_nose, "nose", np.where(cen[:, 1] < brow_y, "forehead", np.where(cen[:, 1] > lip_y, "chin", np.where(cen[:, 0] < 0, "right_cheek", "left_cheek"))))
     area = 0.5 * np.linalg.norm(np.cross(C[tris[:, 1]] - C[tris[:, 0]], C[tris[:, 2]] - C[tris[:, 0]]), axis=1)
     return zone, skin, area
