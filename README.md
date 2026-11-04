@@ -1,120 +1,95 @@
 # Pigmentation Detection
 
-A focused project for detecting and segmenting pigmentation regions in facial images using a trained Mask R-CNN model and a Streamlit interface.
-
-## Overview
-
-The application allows a user to upload a facial image, run the trained model, and view the predicted pigmentation regions. A confidence threshold control filters which detections are displayed.
-
-This is a research/demo project, not a clinically validated diagnostic system.
-
-## Dataset
-
-A pigmentation-specific dataset was not supplied with the project. Publicly available Roboflow dataset material was used to prepare approximately 1,000 images for the pigmentation workflow.
-
-The images and annotations were used to train the model. Update the dataset split counts here if they change in the final training setup. Only redistribute images when their licenses permit it.
+Detects and segments pigmentation regions on facial skin with a trained Mask R-CNN, behind a Streamlit page. Part of Clinderma (branch **pigmentation**). Research/demo project, not a clinically validated diagnostic system.
 
 ## Model
 
-- **Task:** Pigmentation-region detection and segmentation
-- **Architecture:** Mask R-CNN
-- **Backbone:** ResNet-50 with Feature Pyramid Network (FPN)
-- **Framework:** PyTorch and Torchvision
-- **Interface:** Streamlit
-- **Inference configuration:** `inference_config.json`, if used by the application
-- **Trained weights:** `best_model.pth` (must be available at the path expected by the code)
+| Item | Value |
+|---|---|
+| Model | Mask R-CNN (Mask Region-based Convolutional Neural Network) |
+| Backbone | ResNet-50 |
+| Feature extraction | Feature Pyramid Network (FPN) |
+| Task | Detection and instance segmentation of pigmentation regions on facial skin |
+| Output | Predicted pigmentation regions with segmentation masks and confidence scores |
 
-The model produces candidate regions, confidence scores, and segmentation masks. The confidence threshold controls which detections are displayed; changing it does not retrain the model.
+## Framework and technologies
 
-## Project files
+- **Deep learning framework:** PyTorch
+- **Computer vision library:** Torchvision (Mask R-CNN ResNet-50 FPN builders)
+- **Language:** Python
+- **User interface:** Streamlit
+- **Model checkpoint:** `best_model.pth` (168.06 MB, stored with Git LFS)
+
+## Trained weights: use without training
+
+`best_model.pth` holds the **trained model's weights**, so the model can be used directly for inference without training it again. Install Git LFS before cloning (otherwise you only get a small pointer file instead of the weights):
+
+```cmd
+git lfs install
+git clone -b pigmentation https://github.com/Harsh2517-coder/Clinderma.git
+```
+
+Inference settings are in `inference_config.json`: confidence threshold 0.75, CLAHE off, horizontal-flip test-time augmentation on. All three can be changed in the app's sidebar.
+
+## Where it runs now
+
+The model currently runs **locally on a Windows laptop**; nothing is sent to a cloud service.
+
+1. The trained model is loaded locally for inference.
+2. Streamlit is the front end: the user uploads a face image (jpg, jpeg, png or webp).
+3. The model processes the image and the page shows the detected pigmentation regions and their segmentation masks.
+
+What the app does with an uploaded image: optional CLAHE contrast fix (automatic when the image is low-contrast) -> Mask R-CNN -> optional flip test-time augmentation (normal + flipped results merged with NMS) -> confidence-threshold slider -> optional restriction to the facial skin zones (`generate_face_regions_v2.py`) -> mask overlay, the five anatomical region masks, and the number of detections. If a ground-truth mask is uploaded it also reports Dice and IoU.
+
+## Dataset
+
+A pigmentation-specific dataset was not supplied with the project. Publicly available Roboflow dataset material was used to prepare approximately 1,000 images for the pigmentation workflow, and the images and annotations were used to train the model. Only redistribute images when their licenses permit it.
+
+## Files
 
 ```text
-Clinderma/
-├── streamlit_app.py
-├── pigmentation_maskrcnn_v2_improved.py
-├── inference_config.json
-├── best_model.pth                 # model weights; may be stored separately
-├── generate_face_regions_v2.py    # include/use only if the app imports it
-├── requirements.txt
-└── README.md
+streamlit_app.py                         the app
+generate_face_regions_v2.py              face-region helper imported by the app (keep it beside streamlit_app.py)
+inference_config.json                    threshold, CLAHE and TTA defaults
+best_model.pth                           trained weights (Git LFS)
+pigmentation_maskrcnn_v2_improved (1).ipynb   training notebook
+requirements.txt
+preprocessing/, acne/, docs/, examples/  shared with the other branches
 ```
 
-The actual repository may contain other files. This README focuses on the pigmentation module only.
+## Requirements and installation (Windows Command Prompt)
 
-## Requirements
-
-Use a dedicated Python virtual environment. Python 3.10 is a sensible starting point for compatibility with the existing project, but confirm the Python version supported by the installed PyTorch, Torchvision, and other packages on your machine.
-
-The `requirements.txt` file lists the Python packages used by the app. PyTorch and Torchvision should be compatible with each other and with your operating system. If you need CUDA/GPU support, install the appropriate PyTorch build for your system.
-
-## Installation (Windows Command Prompt)
-
-Clone the repository and switch to the pigmentation branch:
+Use a dedicated Python virtual environment (Python 3.10 is a sensible starting point; confirm the version your PyTorch and Torchvision install supports).
 
 ```cmd
-git clone -b pigmentation https://github.com/Harsh2517-coder/Clinderma.git
 cd Clinderma
-```
-
-Create and activate a virtual environment:
-
-```cmd
 python -m venv .venv
 .venv\Scripts\activate
-```
-
-Upgrade pip:
-
-```cmd
 python -m pip install --upgrade pip
-```
-
-Install dependencies:
-
-```cmd
 python -m pip install -r requirements.txt
 ```
 
-If PyTorch installation fails or you need GPU support, install a compatible PyTorch/Torchvision pair using the official PyTorch installation instructions, then install the remaining requirements.
+PyTorch and Torchvision must be compatible with each other and with your system. For GPU support, install the matching CUDA build from the official PyTorch instructions first, then the remaining requirements.
 
-## Model checkpoint
-
-The application needs the trained model checkpoint. Make sure `best_model.pth` is available at the path referenced by `streamlit_app.py` and the model-loading code.
-
-If the checkpoint is too large for normal GitHub storage, keep it in Git LFS or suitable external storage and document how to retrieve it. Do not commit secrets or private images.
-
-## Run the application
-
-From the repository root:
+## Run
 
 ```cmd
 streamlit run streamlit_app.py
 ```
 
-Then:
+Upload a face image, adjust the confidence threshold and options in the sidebar, and inspect the predicted regions. If the app reports a missing checkpoint or file, check that `best_model.pth` is a real file (not an LFS pointer) and that `inference_config.json` and `generate_face_regions_v2.py` sit beside `streamlit_app.py`.
 
-1. Upload a supported facial image.
-2. Run the prediction.
-3. Inspect the predicted pigmentation regions.
-4. Adjust the confidence threshold to change which detections are displayed.
+## Evaluation and limitations
 
-If the app reports a missing checkpoint or configuration file, check the paths used in the code.
-
-## Evaluation
-
-Evaluate segmentation using a labeled validation/test set. Metrics such as Intersection over Union (IoU) and Dice score compare predicted masks with ground-truth masks. Do not report a score unless it has actually been calculated on the relevant labeled data.
-
-A model confidence score is not a clinical probability or diagnosis.
-
-## Limitations
-
-- Results depend on dataset quality, annotations, lighting, pose, skin tone, and image quality.
-- The model has not been established as a clinically validated diagnostic tool.
-- The application should be used for research and demonstration, not medical diagnosis.
+- Segmentation quality is measured with Intersection over Union (IoU) and Dice against ground-truth masks on a labelled validation/test set. Do not report a score unless it was actually calculated on the relevant labelled data. A model confidence score is not a clinical probability or a diagnosis.
+- Results depend on dataset quality, annotations, lighting, pose, skin tone and image quality. The model is for research and demonstration, not medical diagnosis.
 
 ## Future work
 
-- Evaluate on a held-out labeled test set and document measured metrics.
-- Verify performance across different skin tones, poses, and lighting conditions.
-- Improve user-facing error handling and checkpoint setup.
+- Evaluate on a held-out labelled test set and document the measured metrics.
+- Check performance across skin tones, poses and lighting.
 - Document the final dataset split and model version.
+
+## Other branches
+
+`main` (five-zone preprocessing), `V2`, `V3-preprocess-training`, `patient-preprocessed-first5`, `patient-preprocessed-all`, `tanaya_prototype` (acne + GAGS prototype), `face-wellness-platform` (FaceVeda, training, 3D face map).
