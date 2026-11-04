@@ -1,4 +1,31 @@
-# Clinderma Preprocessing
+# Clinderma
+
+Clinderma is a facial skin analysis project: face preprocessing into five zones, acne detection, pigmentation detection and a severity score. Each branch of this repository holds a different module or stage of the work. This README describes the branch you are on (**V2**).
+
+## Branches of this repository
+
+| Branch | What it holds |
+|---|---|
+| `main` | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
+| **V2** (this branch) | main + `DATASET_COMBINED/` (labelled acne and pigmentation images) + the first version of the `V_3/` pipeline. |
+| `V3-preprocess-training` | V2 + the finished `V_3/` pipeline (CLAHE-first preprocessing, spot candidates, tests) + detector training scripts. |
+| `patient-preprocessed-first5` | V3-preprocess-training + `patient_preprocessed/`: V_3 face cutouts for the first 5 patients (24 photos). |
+| `patient-preprocessed-all` | Same, for all patients 001 to 050 (a few numbers are absent), with `manifest.csv`. |
+| `pigmentation` | Pigmentation detection and segmentation: Mask R-CNN (ResNet-50 + FPN) with a Streamlit app. Trained weights `best_model.pth` (Git LFS). |
+| `tanaya_prototype` | The full prototype: FastAPI backend + React front end. MediaPipe five zones, RF-DETR acne detection (hosted on Roboflow), GAGS severity score. |
+| `face-wellness-platform` | FaceVeda (three-role face-wellness platform) + `training/` (local RF-DETR retrain, class-wise scoring) + `face_fusion/` (3D face map from three views). |
+
+## This branch
+
+Everything in `main`, plus:
+
+- `DATASET_COMBINED/acne/`: 388 labelled images (YOLO format) with one class-ID scheme across the four source datasets. 7 classes: open_comedone, closed_comedone, papule, pustule, nodule, cyst, macrocomedone.
+- `DATASET_COMBINED/pigmentation/`: 166 images and 54 label files (not every image has labels yet).
+- `V_3/`: the first version of the V_3 pipeline: face crop (YOLOv8-face), face parsing, spot detection and a small Gradio app (`V_3/README.md`).
+
+> **Data notice:** this branch contains clinical photographs used for labelling and training the project's models. They are project data: do not redistribute them or use them outside the project.
+
+## Preprocessing module (v2)
 
 This repository currently provides the **image preprocessing / facial region layer** for Clinderma. Acne detection, pigmentation detection, GAGS scoring, and disease-specific downstream models are separate modules that should consume this preprocessing output.
 
