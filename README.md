@@ -1,4 +1,25 @@
-# Clinderma - Unified Facial Preprocessing & Acne Detection Pipeline
+# Clinderma
+
+Clinderma is a facial skin analysis project: face preprocessing into five zones, acne detection, pigmentation detection and a severity score. Each branch of this repository holds a different module or stage of the work. This README describes the branch you are on (**tanaya_prototype**).
+
+## Branches of this repository
+
+| Branch | What it holds |
+|---|---|
+| `main` | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
+| `V2` | main + `DATASET_COMBINED/` (labelled acne and pigmentation images) + the first version of the `V_3/` pipeline. |
+| `V3-preprocess-training` | V2 + the finished `V_3/` pipeline (CLAHE-first preprocessing, spot candidates, tests) + detector training scripts. |
+| `patient-preprocessed-first5` | V3-preprocess-training + `patient_preprocessed/`: V_3 face cutouts for the first 5 patients (24 photos). |
+| `patient-preprocessed-all` | Same, for all patients 001 to 050 (a few numbers are absent), with `manifest.csv`. |
+| `pigmentation` | Pigmentation detection and segmentation: Mask R-CNN (ResNet-50 + FPN) with a Streamlit app. Trained weights `best_model.pth` (Git LFS). |
+| **tanaya_prototype** (this branch) | The full prototype: FastAPI backend + React front end. MediaPipe five zones, RF-DETR acne detection (hosted on Roboflow), GAGS severity score. |
+| `face-wellness-platform` | FaceVeda (three-role face-wellness platform) + `training/` (local RF-DETR retrain, class-wise scoring) + `face_fusion/` (3D face map from three views). |
+
+## This branch
+
+The full working prototype, kept separate from the module branches: `backend/` (FastAPI, MediaPipe face mesh, V_3 preprocessing, acne detection through Roboflow's hosted RF-DETR model, five-zone mapping and GAGS score) and `src/` (React + Vite front end). Run instructions are below.
+
+## Prototype: unified facial preprocessing and acne detection pipeline
 
 A clinical-grade AI pipeline combining **MediaPipe Face Mesh landmark orientation & 5-zone anatomical segmentation** with an **RF-DETR deep learning acne detection model** to provide end-to-end acne classification and Global Acne Grading System (GAGS) evaluation.
 
