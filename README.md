@@ -1,5 +1,7 @@
 # FaceVeda: face wellness platform (research prototype)
 
+> **This branch is part of the Clinderma repository** (`Harsh2517-coder/Clinderma`). It holds the FaceVeda platform, `training/` (local RF-DETR retrain and class-wise scoring) and `face_fusion/` (3D face map from three views). The other Clinderma modules are on the branches listed at the end of this file.
+
 Three-level SaaS (admin -> doctor -> patient). Patients scan their face (front, left, right) weekly; the scan splits the face into five zones and counts spots per zone; zones are linked to body areas using
 **Ayurveda and Traditional Chinese Medicine face maps, shown as traditional and unproven, never as a diagnosis**. Doctors get weekly availability charts, patient records and notes; admins get everything plus a master calendar.
 
@@ -74,3 +76,16 @@ the filter that keeps only the proposed spots that look like real acne-type lesi
 
 ## Logo
 The FaceVeda logo is `static/logo.png`; `python3 make_logo_assets.py` rebuilds the small monogram and favicon from it. `python3 docs/make_video.py` rebuilds the overview video from `docs/screenshots/`.
+
+## Branches of the Clinderma repository
+
+| Branch | What it holds |
+|---|---|
+| **main** (this branch) | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
+| `V2` | main + `DATASET_COMBINED/` (labelled acne and pigmentation images) + the first version of the `V_3/` pipeline. |
+| `V3-preprocess-training` | V2 + the finished `V_3/` pipeline (CLAHE-first preprocessing, spot candidates, tests) + detector training scripts. |
+| `patient-preprocessed-first5` | V3-preprocess-training + `patient_preprocessed/`: V_3 face cutouts for the first 5 patients (24 photos). |
+| `patient-preprocessed-all` | Same, for all patients 001 to 050 (a few numbers are absent), with `manifest.csv`. |
+| `pigmentation` | Pigmentation detection and segmentation: Mask R-CNN (ResNet-50 + FPN) with a Streamlit app. Trained weights `best_model.pth` (Git LFS). |
+| `tanaya_prototype` | The full prototype: FastAPI backend + React front end. MediaPipe five zones, RF-DETR acne detection (hosted on Roboflow), GAGS severity score. |
+| **face-wellness-platform** (this branch) | FaceVeda (three-role face-wellness platform) + `training/` (local RF-DETR retrain, class-wise scoring) + `face_fusion/` (3D face map from three views). |
