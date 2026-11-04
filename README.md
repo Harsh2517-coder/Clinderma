@@ -81,7 +81,7 @@ The FaceVeda logo is `static/logo.png`; `python3 make_logo_assets.py` rebuilds t
 
 | Branch | What it holds |
 |---|---|
-| **main** (this branch) | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
+| `main` | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
 | `V2` | main + `DATASET_COMBINED/` (labelled acne and pigmentation images) + the first version of the `V_3/` pipeline. |
 | `V3-preprocess-training` | V2 + the finished `V_3/` pipeline (CLAHE-first preprocessing, spot candidates, tests) + detector training scripts. |
 | `patient-preprocessed-first5` | V3-preprocess-training + `patient_preprocessed/`: V_3 face cutouts for the first 5 patients (24 photos). |
