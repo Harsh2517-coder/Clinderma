@@ -1,4 +1,32 @@
-# Clinderma Preprocessing
+# Clinderma
+
+Clinderma is a facial skin analysis project: face preprocessing into five zones, acne detection, pigmentation detection and a severity score. Each branch of this repository holds a different module or stage of the work. This README describes the branch you are on (**V3-preprocess-training**).
+
+## Branches of this repository
+
+| Branch | What it holds |
+|---|---|
+| `main` | Facial preprocessing (v2): MediaPipe face mesh + face parsing to five zones. Code only, no datasets or model files. |
+| `V2` | main + `DATASET_COMBINED/` (labelled acne and pigmentation images) + the first version of the `V_3/` pipeline. |
+| **V3-preprocess-training** (this branch) | V2 + the finished `V_3/` pipeline (CLAHE-first preprocessing, spot candidates, tests) + detector training scripts. |
+| `patient-preprocessed-first5` | V3-preprocess-training + `patient_preprocessed/`: V_3 face cutouts for the first 5 patients (24 photos). |
+| `patient-preprocessed-all` | Same, for all patients 001 to 050 (a few numbers are absent), with `manifest.csv`. |
+| `pigmentation` | Pigmentation detection and segmentation: Mask R-CNN (ResNet-50 + FPN) with a Streamlit app. Trained weights `best_model.pth` (Git LFS). |
+| `tanaya_prototype` | The full prototype: FastAPI backend + React front end. MediaPipe five zones, RF-DETR acne detection (hosted on Roboflow), GAGS severity score. |
+| `face-wellness-platform` | FaceVeda (three-role face-wellness platform) + `training/` (local RF-DETR retrain, class-wise scoring) + `face_fusion/` (3D face map from three views). |
+
+## This branch
+
+Everything in `V2`, with `V_3/` completed:
+
+- **Pipeline:** exposure fix + CLAHE on the whole photo, face detection and pixel-level face parsing, removal of background, hair, eyes, brows, lips and nostrils, then high-recall spot candidates (one padded box per spot). Files: `enhance.py`, `face_crop.py`, `face_segment.py`, `spot_detect.py`, `preprocess.py`, all thresholds in `config.py`.
+- **Checks:** `run_tests.py` runs an 18-case matrix (clear skin, acne, pigmentation, skin tones, lighting, resolution, front/left/right) into `V_3/test_outputs/`; `eval_candidates.py` measures how many labelled lesions the candidates cover.
+- **Detector training:** `V_3/training/` (`prepare_dataset.py`, `train.py`, `detect.py`) trains a detector on the face cutouts the pipeline produces (`V_3/training/README.md`).
+- Setup: `pip install -r V_3/requirements.txt` and `bash V_3/models/download_models.sh` (fetches the pretrained models).
+
+> **Data notice:** this branch contains clinical photographs used for labelling and training the project's models. They are project data: do not redistribute them or use them outside the project.
+
+## Preprocessing module (v2)
 
 This repository currently provides the **image preprocessing / facial region layer** for Clinderma. Acne detection, pigmentation detection, GAGS scoring, and disease-specific downstream models are separate modules that should consume this preprocessing output.
 
